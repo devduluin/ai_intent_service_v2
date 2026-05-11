@@ -1,0 +1,120 @@
+import IntentModel from './Intent.model'
+import IntentExampleModel from './intent-example.model'
+import ToolsParameterModel from './Tools-parameter.model'
+import ToolModel from './Tools.model'
+import KnowledgeModel from './knowledge.model'
+import IntentToolMappingModel from './Intent-tool-mapping.model'
+import IntentKnowledgeMappingModel from './Intent-knowledge-mapping.model'
+import AgentModel from './agent.model'
+
+export function setupAssociations() {
+  // =========================
+  // AGENT → INTENT
+  // =========================
+  AgentModel.hasMany(IntentModel, {
+    foreignKey: 'agentId',
+    as: 'intents',
+    onDelete: 'CASCADE',
+  })
+
+  IntentModel.belongsTo(AgentModel, {
+    foreignKey: 'agentId',
+    as: 'agent',
+  })
+
+  // =========================
+  // INTENT CORE CHILDREN
+  // =========================
+  IntentModel.hasMany(IntentExampleModel, {
+    foreignKey: 'intentId',
+    as: 'examples',
+    onDelete: 'CASCADE',
+  })
+
+  IntentExampleModel.belongsTo(IntentModel, {
+    foreignKey: 'intentId',
+    as: 'intent',
+  })
+
+  // =========================
+  // TOOLS
+  // =========================
+  ToolModel.hasMany(ToolsParameterModel, {
+    foreignKey: 'toolId',
+    as: 'parameters',
+    onDelete: 'CASCADE',
+  })
+
+  ToolsParameterModel.belongsTo(ToolModel, {
+    foreignKey: 'toolId',
+    as: 'tool',
+  })
+
+  // =========================
+  // INTENT → TOOLS
+  // =========================
+
+  IntentModel.hasMany(IntentToolMappingModel, {
+    foreignKey: 'intentId',
+    as: 'toolMappings',
+    onDelete: 'CASCADE',
+  })
+
+  ToolModel.hasMany(IntentToolMappingModel, {
+    foreignKey: 'toolId',
+    as: 'intentMappings',
+    onDelete: 'CASCADE',
+  })
+
+  IntentToolMappingModel.belongsTo(IntentModel, {
+    foreignKey: 'intentId',
+    as: 'intent',
+  })
+
+  IntentToolMappingModel.belongsTo(ToolModel, {
+    foreignKey: 'toolId',
+    as: 'tool',
+  })
+
+  // =========================
+  // MANY TO MANY 
+  // =========================
+  IntentModel.belongsToMany(ToolModel, {
+    through: IntentToolMappingModel,
+    foreignKey: 'intentId',
+    otherKey: 'toolId',
+    as: 'tools',
+  })
+
+  ToolModel.belongsToMany(IntentModel, {
+    through: IntentToolMappingModel,
+    foreignKey: 'toolId',
+    otherKey: 'intentId',
+    as: 'intents',
+  })
+
+  // =========================
+  // INTENT → KNOWLEDGE
+  // =========================
+  IntentModel.hasMany(IntentKnowledgeMappingModel, {
+    foreignKey: 'intentId',
+    as: 'knowledgeMappings',
+    onDelete: 'CASCADE',
+  })
+
+  KnowledgeModel.hasMany(IntentKnowledgeMappingModel, {
+    foreignKey: 'knowledgeId',
+    as: 'intentMappings',
+    onDelete: 'CASCADE',
+  })
+
+  IntentKnowledgeMappingModel.belongsTo(IntentModel, {
+    foreignKey: 'intentId',
+    as: 'intent',
+  })
+
+  IntentKnowledgeMappingModel.belongsTo(KnowledgeModel, {
+    foreignKey: 'knowledgeId',
+    as: 'knowledge',
+  })
+}
