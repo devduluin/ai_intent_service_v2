@@ -8,7 +8,7 @@ module.exports = {
     // 🔥 Ambil tools yg sudah di-seed
     const tools = await queryInterface.sequelize.query(
       `SELECT id, slug FROM tools 
-       WHERE slug IN ('get_weather','get_time', 'checkin_trouble', 'leave_allocation_api', 'get_shift')`,
+       WHERE slug IN ('get_weather','get_time', 'checkin_trouble', 'leave_allocation_api', 'get_shift', 'get_payslip', 'claim_expense_status', 'advance_claim', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 
@@ -76,6 +76,149 @@ module.exports = {
         defaultValue: '',
         createdAt: now,
         updatedAt: now,
+      },
+      {
+        toolId: toolMap['get_payslip'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['claim_expense_status'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['advance_claim'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['advance_claim_total'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['advance_claim_unreported'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['travel_request_status'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['travel_request_total'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['travel_request_unreported'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['get_employee_detail'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['request_wfh'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['request_tukar_shift'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['request_overtime'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        toolId: toolMap['get_leave_approval'],
+        name: 'employee_id',
+        type: 'string',
+        description: 'Employee ID atau NIK',
+        isRequired: true,
+        extractPrompt: 'Employee ID atau ID Karyawan. Jika tidak disebutkan, gunakan dari passing data',
+        defaultValue: '',
+        createdAt: now,
+        updatedAt: now,
       }
       // ── Get Time → tidak butuh parameter tambahan ─────────
       // (contoh intent tanpa parameter — tidak ada row di sini)
@@ -83,13 +226,13 @@ module.exports = {
   },
 
   async down(queryInterface) {
-    const intents = await queryInterface.sequelize.query(
-      `SELECT id FROM intents WHERE slug IN ('get_weather', 'get_time', 'checkin_trouble','leave_allocation_api','get_shift')`,
+    const tools = await queryInterface.sequelize.query(
+      `SELECT id FROM tools WHERE slug IN ('get_weather', 'get_time', 'checkin_trouble', 'leave_allocation_api', 'get_shift', 'get_payslip', 'claim_expense_status', 'advance_claim', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
-    const ids = intents.map((i) => i.id)
+    const ids = tools.map((i) => i.id)
     if (ids.length > 0) {
-      await queryInterface.bulkDelete('tools_parameters', { intentId: ids }, {})
+      await queryInterface.bulkDelete('tools_parameters', { toolId: ids }, {})
     }
   },
 }

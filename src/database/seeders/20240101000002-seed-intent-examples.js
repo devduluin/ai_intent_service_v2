@@ -7,7 +7,7 @@ module.exports = {
     // Ambil ID intent yg sudah di-seed
     const intents = await queryInterface.sequelize.query(
       `SELECT id, slug FROM intents 
-       WHERE slug IN ('greeting','utilities','attendance','knowledge_workin','shift','leave_allocation')`,
+       WHERE slug IN ('greeting','utilities','attendance','knowledge_workin','shift','leave_allocation', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval', 'get_payslip', 'claim_expense_status', 'advance_claim_status', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 
@@ -124,6 +124,173 @@ module.exports = {
       { intent: 'leave_allocation', text: 'What is my annual leave entitlement?', language: 'en' },
       { intent: 'leave_allocation', text: 'How many days of annual leave do I have remaining?', language: 'en' },
       { intent: 'leave_allocation', text: 'How many days of annual leave do I have remaining?', language: 'en' },
+
+      // ======================================================
+      // GET PAYSLIP
+      // ======================================================
+      { intent: 'get_payslip', text: 'Cek slip gaji', language: 'id' },
+      { intent: 'get_payslip', text: 'slip gaji saya', language: 'id' },
+      { intent: 'get_payslip', text: 'slip gaji bulan ini', language: 'id' },
+      { intent: 'get_payslip', text: 'slip gaji bulan lalu', language: 'id' },
+
+      { intent: 'get_payslip', text: 'Check payslip', language: 'en' },
+      { intent: 'get_payslip', text: 'My payslip', language: 'en' },
+      { intent: 'get_payslip', text: 'Payslip this month', language: 'en' },
+      { intent: 'get_payslip', text: 'Payslip last month', language: 'en' },
+
+      // ======================================================
+      // GET CLAIM EXPENSE STATUS
+      // ======================================================
+      { intent: 'claim_expense_status', text: 'Cek status klaim reimburse', language: 'id' },
+      { intent: 'claim_expense_status', text: 'status klaim reimburse saya', language: 'id' },
+      { intent: 'claim_expense_status', text: 'status klaim reimburse bulan ini', language: 'id' },
+      { intent: 'claim_expense_status', text: 'status klaim reimburse bulan lalu', language: 'id' },
+
+      { intent: 'claim_expense_status', text: 'Check claim expense status', language: 'en' },
+      { intent: 'claim_expense_status', text: 'My claim expense status', language: 'en' },
+      { intent: 'claim_expense_status', text: 'Claim expense status this month', language: 'en' },
+      { intent: 'claim_expense_status', text: 'Claim expense status last month', language: 'en' },
+
+      // ======================================================
+      // GET ADVANCE CLAIM STATUS
+      // ======================================================
+      { intent: 'advance_claim_status', text: 'Cek status dana talangan', language: 'id' },
+      { intent: 'advance_claim_status', text: 'status dana talangan saya', language: 'id' },
+      { intent: 'advance_claim_status', text: 'status dana talangan bulan ini', language: 'id' },
+      { intent: 'advance_claim_status', text: 'status dana talangan bulan lalu', language: 'id' },
+
+      { intent: 'advance_claim_status', text: 'Check advance claim status', language: 'en' },
+      { intent: 'advance_claim_status', text: 'My advance claim status', language: 'en' },
+      { intent: 'advance_claim_status', text: 'Advance claim status this month', language: 'en' },
+      { intent: 'advance_claim_status', text: 'Advance claim status last month', language: 'en' },
+
+      // ======================================================
+      // GET ADVANCE CLAIM TOTAL
+      // ======================================================
+      { intent: 'advance_claim_total', text: 'Berapa total dana talangan?', language: 'id' },
+      { intent: 'advance_claim_total', text: 'total dana talangan saya', language: 'id' },
+      { intent: 'advance_claim_total', text: 'total dana talangan bulan ini', language: 'id' },
+      { intent: 'advance_claim_total', text: 'total dana talangan bulan lalu', language: 'id' },
+
+      { intent: 'advance_claim_total', text: 'Check advance claim total', language: 'en' },
+      { intent: 'advance_claim_total', text: 'My advance claim total', language: 'en' },
+      { intent: 'advance_claim_total', text: 'Advance claim total this month', language: 'en' },
+      { intent: 'advance_claim_total', text: 'Advance claim total last month', language: 'en' },
+
+      // ======================================================
+      // GET ADVANCE CLAIM UNSUCCESS
+      // ======================================================
+      { intent: 'advance_claim_unreported', text: 'Cek status dana talangan', language: 'id' },
+      { intent: 'advance_claim_unreported', text: 'status dana talangan saya', language: 'id' },
+      { intent: 'advance_claim_unreported', text: 'status dana talangan bulan ini', language: 'id' },
+      { intent: 'advance_claim_unreported', text: 'status dana talangan bulan lalu', language: 'id' },
+
+      { intent: 'advance_claim_unreported', text: 'Check advance claim unreported', language: 'en' },
+      { intent: 'advance_claim_unreported', text: 'My advance claim unreported', language: 'en' },
+      { intent: 'advance_claim_unreported', text: 'Advance claim unreported this month', language: 'en' },
+      { intent: 'advance_claim_unreported', text: 'Advance claim unreported last month', language: 'en' },
+
+      // ======================================================
+      // GET TRAVEL REQUEST STATUS
+      // ======================================================
+      { intent: 'travel_request_status', text: 'Cek status perjalanan dinas', language: 'id' },
+      { intent: 'travel_request_status', text: 'status perjalanan dinas saya', language: 'id' },
+      { intent: 'travel_request_status', text: 'status perjalanan dinas bulan ini', language: 'id' },
+      { intent: 'travel_request_status', text: 'status perjalanan dinas bulan lalu', language: 'id' },
+
+      { intent: 'travel_request_status', text: 'Check travel request status', language: 'en' },
+      { intent: 'travel_request_status', text: 'My travel request status', language: 'en' },
+      { intent: 'travel_request_status', text: 'Travel request status this month', language: 'en' },
+      { intent: 'travel_request_status', text: 'Travel request status last month', language: 'en' },
+
+      // ======================================================
+      // GET TRAVEL REQUEST TOTAL
+      // ======================================================
+      { intent: 'travel_request_total', text: 'Berapa total perjalanan dinas?', language: 'id' },
+      { intent: 'travel_request_total', text: 'total perjalanan dinas saya', language: 'id' },
+      { intent: 'travel_request_total', text: 'total perjalanan dinas bulan ini', language: 'id' },
+      { intent: 'travel_request_total', text: 'total perjalanan dinas bulan lalu', language: 'id' },
+
+      { intent: 'travel_request_total', text: 'Check travel request total', language: 'en' },
+      { intent: 'travel_request_total', text: 'My travel request total', language: 'en' },
+      { intent: 'travel_request_total', text: 'Travel request total this month', language: 'en' },
+      { intent: 'travel_request_total', text: 'Travel request total last month', language: 'en' },
+
+      // ======================================================
+      // GET TRAVEL REQUEST UNSUCCESS
+      // ======================================================
+      { intent: 'travel_request_unreported', text: 'Cek status perjalanan dinas', language: 'id' },
+      { intent: 'travel_request_unreported', text: 'status perjalanan dinas saya', language: 'id' },
+      { intent: 'travel_request_unreported', text: 'status perjalanan dinas bulan ini', language: 'id' },
+      { intent: 'travel_request_unreported', text: 'status perjalanan dinas bulan lalu', language: 'id' },
+
+      { intent: 'travel_request_unreported', text: 'Check travel request unreported', language: 'en' },
+      { intent: 'travel_request_unreported', text: 'My travel request unreported', language: 'en' },
+      { intent: 'travel_request_unreported', text: 'Travel request unreported this month', language: 'en' },
+      { intent: 'travel_request_unreported', text: 'Travel request unreported last month', language: 'en' },
+
+      // ======================================================
+      // GET EMPLOYEE DETAIL
+      // ======================================================
+      { intent: 'get_employee_detail', text: 'Tampilkan detail karyawan saya', language: 'id' },
+      { intent: 'get_employee_detail', text: 'tampilkan detail karyawan', language: 'id' },
+      { intent: 'get_employee_detail', text: 'detail karyawan', language: 'id' },
+
+      { intent: 'get_employee_detail', text: 'Show my employee detail', language: 'en' },
+      { intent: 'get_employee_detail', text: 'Show employee detail', language: 'en' },
+      { intent: 'get_employee_detail', text: 'Employee detail', language: 'en' },
+
+      // ======================================================
+      // GET REQUEST WFH
+      // ======================================================
+      { intent: 'request_wfh', text: 'Cek status WFH', language: 'id' },
+      { intent: 'request_wfh', text: 'status WFH saya', language: 'id' },
+      { intent: 'request_wfh', text: 'status WFH bulan ini', language: 'id' },
+      { intent: 'request_wfh', text: 'status WFH bulan lalu', language: 'id' },
+
+      { intent: 'request_wfh', text: 'Check WFH status', language: 'en' },
+      { intent: 'request_wfh', text: 'My WFH status', language: 'en' },
+      { intent: 'request_wfh', text: 'WFH status this month', language: 'en' },
+      { intent: 'request_wfh', text: 'WFH status last month', language: 'en' },
+
+      // ======================================================
+      // GET REQUEST TUKAR SHIFT
+      // ======================================================
+      { intent: 'request_tukar_shift', text: 'Cek status tukar shift', language: 'id' },
+      { intent: 'request_tukar_shift', text: 'status tukar shift saya', language: 'id' },
+      { intent: 'request_tukar_shift', text: 'status tukar shift bulan ini', language: 'id' },
+      { intent: 'request_tukar_shift', text: 'status tukar shift bulan lalu', language: 'id' },
+
+      { intent: 'request_tukar_shift', text: 'Check tukar shift status', language: 'en' },
+      { intent: 'request_tukar_shift', text: 'My tukar shift status', language: 'en' },
+      { intent: 'request_tukar_shift', text: 'Tukar shift status this month', language: 'en' },
+      { intent: 'request_tukar_shift', text: 'Tukar shift status last month', language: 'en' },
+
+      // ======================================================
+      // GET REQUEST LEMBUR
+      // ======================================================
+      { intent: 'request_overtime', text: 'Cek status izin lembur', language: 'id' },
+      { intent: 'request_overtime', text: 'status izin lembur saya', language: 'id' },
+      { intent: 'request_overtime', text: 'status izin lembur bulan ini', language: 'id' },
+      { intent: 'request_overtime', text: 'status izin lembur bulan lalu', language: 'id' },
+
+      { intent: 'request_overtime', text: 'Check overtime status', language: 'en' },
+      { intent: 'request_overtime', text: 'My overtime status', language: 'en' },
+      { intent: 'request_overtime', text: 'Overtime status this month', language: 'en' },
+      { intent: 'request_overtime', text: 'Overtime status last month', language: 'en' },
+
+      // ======================================================
+      // GET REQUEST CUTI
+      // ======================================================
+      { intent: 'get_leave_approval', text: 'Cek status cuti', language: 'id' },
+      { intent: 'get_leave_approval', text: 'status cuti saya', language: 'id' },
+      { intent: 'get_leave_approval', text: 'status cuti bulan ini', language: 'id' },
+      { intent: 'get_leave_approval', text: 'status cuti bulan lalu', language: 'id' },
+
+      { intent: 'get_leave_approval', text: 'Check cuti status', language: 'en' },
+      { intent: 'get_leave_approval', text: 'My cuti status', language: 'en' },
+      { intent: 'get_leave_approval', text: 'Cuti status this month', language: 'en' },
+      { intent: 'get_leave_approval', text: 'Cuti status last month', language: 'en' },
     ]
 
     const rows = examples.map((e) => ({
@@ -140,7 +307,7 @@ module.exports = {
   async down(queryInterface) {
     const intents = await queryInterface.sequelize.query(
       `SELECT id FROM intents 
-       WHERE slug IN ('greeting','utilities','attendance','knowledge_workin','shift','leave_allocation')`,
+       WHERE slug IN ('greeting','utilities','attendance','knowledge_workin','shift','leave_allocation', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval', 'get_payslip', 'claim_expense_status', 'advance_claim_status', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 
