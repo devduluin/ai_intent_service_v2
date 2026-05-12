@@ -31,7 +31,6 @@ export const handleGreeting: ApiHandlerFn = async (params, context) => {
   let response = generateGreeting({
     greetingType,
     userName,
-    timeString,
     language,
     isFirstInteraction,
     skillsCount: Object.keys(skills).length
@@ -88,15 +87,24 @@ function checkFirstInteraction(context: any): boolean {
     return true
   }
   
-  // Check chat history length
+  // Check chat history
   const chatHistory = context?.chat_history || context?.attributes?.chat_history
-  if (Array.isArray(chatHistory)) {
-    // If no previous messages or only system messages, it's first interaction
-    const userMessages = chatHistory.filter(msg => msg.role === 'user')
-    return userMessages.length === 0
+  if (Array.isArray(chatHistory) && chatHistory.length > 0) {
+    // Get last message in chat history
+    const lastMessage = chatHistory[chatHistory.length - 1]
+    
+    // If last message is from 'assistant', this is NOT first interaction
+    // Karena assistant baru saja merespon, berarti sudah ada interaksi sebelumnya
+    if (lastMessage?.role === 'assistant') {
+      return false
+    }
+    
+    // If last message is NOT from assistant (user or other role), 
+    // this IS first interaction (true)
+    return true
   }
   
-  // Default assumption
+  // No chat history or empty array
   return true
 }
 
@@ -177,7 +185,6 @@ function formatSkillsList(skills: Record<string, string>, language: string): str
 function generateGreeting(options: {
   greetingType: 'morning' | 'afternoon' | 'evening' | 'night'
   userName: string
-  timeString: string
   language: string
   isFirstInteraction: boolean
   skillsCount: number
