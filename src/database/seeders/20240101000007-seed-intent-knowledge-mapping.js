@@ -31,6 +31,27 @@ module.exports = {
         createdAt: now,
         updatedAt: now,
       },
+      {
+        intentId: getId(intents, 'attendance'),
+        knowledgeId: getId(knowledge, 'attendance_faq'),
+        priority: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        intentId: getId(intents, 'leave_allocation'),
+        knowledgeId: getId(knowledge, 'leave_faq'),
+        priority: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        intentId: getId(intents, 'shift'),
+        knowledgeId: getId(knowledge, 'attendance_faq'),
+        priority: 1,
+        createdAt: now,
+        updatedAt: now,
+      }
     ])
   },
 

@@ -64,6 +64,30 @@ module.exports = {
         createdAt: now,
         updatedAt: now,
       },
+      {
+        agentId: hrisAgentId,
+        slug: 'shift',
+        name: 'Shift',
+        description: 'Mendapatkan informasi shift',
+        executionType: 'llm',
+        handlerKey: null,
+        isActive: true,
+        metadata: JSON.stringify({ icon: '🕐', category: 'information' }), // ← FIX
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        agentId: hrisAgentId,
+        slug: 'leave_allocation',
+        name: 'Leave Allocation',
+        description: 'Mendapatkan informasi leave allocation',
+        executionType: 'llm',
+        handlerKey: null,
+        isActive: true,
+        metadata: JSON.stringify({ icon: '🕐', category: 'information' }), // ← FIX
+        createdAt: now,
+        updatedAt: now,
+      }
     ])
   },
 

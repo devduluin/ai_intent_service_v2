@@ -7,7 +7,7 @@ module.exports = {
     // Ambil ID intent yg sudah di-seed
     const intents = await queryInterface.sequelize.query(
       `SELECT id, slug FROM intents 
-       WHERE slug IN ('greeting','utilities','attendance','knowledge_workin')`,
+       WHERE slug IN ('greeting','utilities','attendance','knowledge_workin','shift','leave_allocation')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 
@@ -89,6 +89,41 @@ module.exports = {
       { intent: 'knowledge_workin', text: 'What is Workin?', language: 'en' },
       { intent: 'knowledge_workin', text: 'How to request leave in Workin?', language: 'en' },
       { intent: 'knowledge_workin', text: 'How to check attendance in Workin?', language: 'en' },
+
+      // ======================================================
+      // GET SHIFT
+      // ======================================================
+      { intent: 'shift', text: 'Cek jadwal absensi hari ini', language: 'id' },
+      { intent: 'shift', text: 'Cek jadwal masuk hari ini', language: 'id' },
+      { intent: 'shift', text: 'Cek jadwal pulang hari ini', language: 'id' },
+      { intent: 'shift', text: 'Cek jadwal saya', language: 'id' },
+      { intent: 'shift', text: 'Cek jadwal absensi minggu ini', language: 'id' },
+      { intent: 'shift', text: 'Cek jadwal absensi minggu depan', language: 'id' },
+      { intent: 'shift', text: 'Apakah saya punya jadwal kerja besok?', language: 'id' },
+
+      { intent: 'shift', text: 'Check my schedule today', language: 'en' },
+      { intent: 'shift', text: 'Check my schedule', language: 'en' },
+      { intent: 'shift', text: 'Check my schedule', language: 'en' },
+      { intent: 'shift', text: 'Check my work schedule for this week', language: 'en' },
+      { intent: 'shift', text: 'Check my work schedule for next week', language: 'en' },
+      { intent: 'shift', text: 'Do I have a work schedule tomorrow?', language: 'en' },
+
+      // ======================================================
+      // GET LEAVE ALLOCATION
+      // ======================================================
+      { intent: 'leave_allocation', text: 'Sisa cuti tahunan saya berapa?', language: 'id' },
+      { intent: 'leave_allocation', text: 'Berapa sisa cuti saya tahun ini?', language: 'id' },
+      { intent: 'leave_allocation', text: 'Berapa sisa cuti saya tahun ini?', language: 'id' },
+      { intent: 'leave_allocation', text: 'Berapa jatah cuti tahunan saya?', language: 'id' },
+      { intent: 'leave_allocation', text: 'Cuti tahunan saya sisa berapa hari?', language: 'id' },
+      { intent: 'leave_allocation', text: 'Cuti tahunan saya sisa berapa hari?', language: 'id' },
+
+      { intent: 'leave_allocation', text: 'How many annual leave days do I have left?', language: 'en' },
+      { intent: 'leave_allocation', text: 'How many leave days do I have left this year?', language: 'en' },
+      { intent: 'leave_allocation', text: 'How many leave days do I have left this year?', language: 'en' },
+      { intent: 'leave_allocation', text: 'What is my annual leave entitlement?', language: 'en' },
+      { intent: 'leave_allocation', text: 'How many days of annual leave do I have remaining?', language: 'en' },
+      { intent: 'leave_allocation', text: 'How many days of annual leave do I have remaining?', language: 'en' },
     ]
 
     const rows = examples.map((e) => ({
@@ -105,7 +140,7 @@ module.exports = {
   async down(queryInterface) {
     const intents = await queryInterface.sequelize.query(
       `SELECT id FROM intents 
-       WHERE slug IN ('greeting','utilities','attendance','knowledge_workin')`,
+       WHERE slug IN ('greeting','utilities','attendance','knowledge_workin','shift','leave_allocation')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 

@@ -35,6 +35,30 @@ module.exports = {
           createdAt: now,
           updatedAt: now,
         },
+        {
+          intentId: getId(intents, 'attendance'),
+          toolId: getId(tools, 'checkin_trouble'),
+          isPrimary: true,
+          priority: 1,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          intentId: getId(intents, 'leave_allocation'),
+          toolId: getId(tools, 'leave_allocation_api'),
+          isPrimary: true,
+          priority: 1,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          intentId: getId(intents, 'shift'),
+          toolId: getId(tools, 'get_shift'),
+          isPrimary: true,
+          priority: 1,
+          createdAt: now,
+          updatedAt: now,
+        }
       ],
       {
         ignoreDuplicates: true,
