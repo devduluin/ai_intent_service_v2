@@ -77,7 +77,7 @@ class OpenAiService {
     originalQuery: string,
     userName: string,
     language = 'Indonesia',
-    llmModel = config.alibaba.llmModel || "qwen3-8b",
+    llmModel = config.alibaba.naturalModel || "qwen3-8b",
     options: { temperature?: number; num_predict?: number } = {}
   ): Promise<string> {
     
@@ -134,6 +134,8 @@ Tawarkan bantuan lain jika perlu.
 `.trim()
     }
 
+    console.log(`[Alibaba naturalize] prompt: ${prompt}`)
+
     const completion = await this.createCompletion({
       model: llmModel,
       messages: [{ role: 'user', content: prompt }],
@@ -142,7 +144,7 @@ Tawarkan bantuan lain jika perlu.
     })
 
     const duration = Date.now() - start
-    console.log(`[Alibaba prompt length] ${llmModel} with model ${llmModel} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
+    console.log(`[Alibaba naturalize] with model ${llmModel} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
 
     return completion.choices[0]?.message?.content || ''
   }

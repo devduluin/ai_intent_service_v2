@@ -82,12 +82,20 @@ POST http://0.0.0.0:3000/api/v1/intent/chat
 payload raw :
 {
   "user_id": "user_1",
-  "app_name": "hris", //agent name
-  "text": "info cuaca hari ini",
-  "chat_history": [
-    { "role": "user", "content": "halo namaku ardi" },
-    { "role": "assistant", "content": "halo, ada yang bisa dibantu?" }
-  ]
+  "app_name": "hris",
+  "text": "Jam berapa sekarang di papua, bagaimana cuaca disana dan Bagaimana jika lupa absen, atau saya mau izin?",
+//   "chat_history": [
+//     { "role": "user", "content": "halo namaku ardi" },
+//     { "role": "assistant", "content": "halo, ada yang bisa dibantu?" }
+//   ],
+  "attributes": {
+    "name": "Ardi Mahendra",
+    // param injection ke tools contoh url tool ;
+    //  http:service_attendance/attendace?employee_id={employee_id} -> replacing value
+    "params": {
+        "employee_id" :"c0c82cb7-97d6-45c2-a1b4-41b45ab6c169"
+    }
+  }
 }
 
 response :

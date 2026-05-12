@@ -39,7 +39,11 @@ class NaturalizationService {
         originalQuery,
         userName,
         language,
-        llmModel || config.alibaba?.naturalModel
+        llmModel || config.alibaba?.naturalModel,
+        {
+          temperature: 0.6,
+          num_predict: config.default?.numPredict,
+        }
       )
     } else {
       result = await ollamaService.naturalize(
@@ -47,7 +51,11 @@ class NaturalizationService {
         originalQuery,
         userName,
         language,
-        llmModel || config.ollama?.llmModel
+        llmModel || config.ollama?.llmModel,
+        {
+          temperature: 0.6,
+          num_predict: config.default?.numPredict,
+        }
       )
     }
     

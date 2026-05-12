@@ -39,7 +39,6 @@ class PipelineService {
     // Get agent by slug from input.app_name
     // ============================================================
     const agent = await this.getAgentBySlug(input.app_name)
-    const user_name = input.attributes?.name ?? 'Guest'
   
     try {
       PipelineValidator.validateAgent(agent, input.app_name)
@@ -85,14 +84,22 @@ class PipelineService {
       const plannerOutput = await this.matchIntent(queryEmbedding, intents, agent, input)
 
       console.log("[Planner Raw]:", plannerOutput)
+      //hasil : [Planner Raw]: { handler: [ 'greeting' ], tools: [], knowledge: [], chat: false }
+
+      //handle untuk intent handler
+      // if (plannerOutput.handlers && plannerOutput.handlers.length > 0) {
+      //   console.log("[Planner Handler]:", plannerOutput.handlers)
+      //    const result = await executionContext.run("handler", {handlerKey: plannerOutput.handlers[0]}, {}, input)
+      //    console.log("[Planner Handler Result]:", result)
+      //    // hasil :[Planner Handler Result]: { success: true, message: 'Hello! user_1!' }
+      // }
 
       const safePlan: PlannerOutput = {
+        handlers: plannerOutput.handlers,
         tools: plannerOutput.tools,
         knowledge: plannerOutput.knowledge,
         chat: plannerOutput.chat && plannerOutput.tools.length === 0 && plannerOutput.knowledge.length === 0
       }
-
-      console.log("[Planner SAFE]:", safePlan)
 
       // Evaluasi planner output
       if (safePlan.chat === true) {
@@ -156,7 +163,6 @@ class PipelineService {
           )
         }
       }
-  
 
       // ============================================================
       // EKSEKUSI INTENTS (pakai selectedIntents untuk handler)
@@ -365,137 +371,172 @@ class PipelineService {
   }
 
   // ============================================================
-// STAGE 2 — INTENT MATCHING VECTOR AND PLANNER
-// ============================================================
-private async matchIntent(
-  embedding: number[], 
-  intents: Intent[], 
-  agent: AgentResponse | null, 
-  input: PipelineInput,
-  usePlan: boolean = true
-): Promise<PlannerOutput> {
+  // STAGE 2 — INTENT MATCHING VECTOR AND PLANNER
+  // ============================================================
+  private async matchIntent(
+    embedding: number[], 
+    intents: Intent[], 
+    agent: AgentResponse | null, 
+    input: PipelineInput,
+    usePlan: boolean = true
+  ): Promise<PlannerOutput> {
 
-  const matches = await vectorService.findIntent(
-    embedding, 
-    intents, 
-    agent as AgentResponse
-  )
+    const matches = await vectorService.findIntent(
+      embedding, 
+      intents, 
+      agent as AgentResponse
+    )
 
-  // ----------------------------------------------------------
-  // NO MATCH → PURE CHAT
-  // ----------------------------------------------------------
-  if (!matches || matches.length === 0) {
-    return { tools: [], knowledge: [], chat: true }
-  }
+    console.log('[Pipeline] Intent matches:', matches);
+    // ----------------------------------------------------------
+    // NO MATCH → PURE CHAT
+    // ----------------------------------------------------------
+    if (!matches || matches.length === 0) {
+      return { handlers: [], tools: [], knowledge: [], chat: true }
+    }
 
-  const toolIntents = matches
-    .filter(m => m.intent.tools && m.intent.tools.length > 0)
-    .map(m => m.intent)
+    const handlerIntents = matches
+      .filter(m => m.intent.executionType === 'handler')
+      .map(m => m.intent)
 
-  const knowledgeIntents = matches
-    .filter(m => m.intent.knowledge && m.intent.knowledge.length > 0)
-    .map(m => m.intent)
+    const toolIntents = matches
+      .filter(m => m.intent.tools && m.intent.tools.length > 0)
+      .map(m => m.intent)
 
-  // ----------------------------------------------------------
-  // BUILD TOOL CANDIDATES
-  // ----------------------------------------------------------
-  const toolsForPrompt = toolIntents.flatMap(intent => {
-    return (intent.tools || []).map((t: any) => {
-      const toolData = t.tool || t
-      return {
-        slug: toolData.slug,
-        name: toolData.name,
-        description: toolData.description,
-        intentSlug: intent.slug,
-        intentName: intent.name
-      }
+    const knowledgeIntents = matches
+      .filter(m => m.intent.knowledge && m.intent.knowledge.length > 0)
+      .map(m => m.intent)
+
+     // ----------------------------------------------------------
+    // BUILD HANDLER CANDIDATES
+    // ----------------------------------------------------------
+    const handlerForPrompt = handlerIntents.flatMap(intent => {
+        return {
+          slug: intent.handlerKey,
+          name: intent.name,
+          description: intent.description,
+          intentSlug: intent.slug,
+          intentName: intent.name
+        }
     })
-  })
 
-  // ----------------------------------------------------------
-  // BUILD KNOWLEDGE CANDIDATES
-  // ----------------------------------------------------------
-  const knowledgeForPrompt = knowledgeIntents.flatMap(intent => {
-    return (intent.knowledge || []).map((k: any) => {
-      const knowledgeData = k.knowledge || k
-      return {
-        slug: knowledgeData.slug,
-        name: knowledgeData.title || knowledgeData.slug,
-        description:
-          knowledgeData.description ||
-          knowledgeData.title ||
-          knowledgeData.slug,
-        intentSlug: intent.slug,
-        intentName: intent.name
-      }
+    // ----------------------------------------------------------
+    // BUILD TOOL CANDIDATES
+    // ----------------------------------------------------------
+    const toolsForPrompt = toolIntents.flatMap(intent => {
+      return (intent.tools || []).map((t: any) => {
+        const toolData = t.tool || t
+        return {
+          slug: toolData.slug,
+          name: toolData.name,
+          description: toolData.description,
+          intentSlug: intent.slug,
+          intentName: intent.name
+        }
+      })
     })
-  })
 
-  const uniqueTools = [
-    ...new Map(toolsForPrompt.map(t => [t.slug, t])).values()
-  ]
+    // ----------------------------------------------------------
+    // BUILD KNOWLEDGE CANDIDATES
+    // ----------------------------------------------------------
+    const knowledgeForPrompt = knowledgeIntents.flatMap(intent => {
+      return (intent.knowledge || []).map((k: any) => {
+        const knowledgeData = k.knowledge || k
+        return {
+          slug: knowledgeData.slug,
+          name: knowledgeData.title || knowledgeData.slug,
+          description:
+            knowledgeData.description ||
+            knowledgeData.title ||
+            knowledgeData.slug,
+          intentSlug: intent.slug,
+          intentName: intent.name
+        }
+      })
+    })
 
-  const uniqueKnowledge = [
-    ...new Map(knowledgeForPrompt.map(k => [k.slug, k])).values()
-  ]
+    const uniqueHandler = [
+      ...new Map(handlerForPrompt.map(h => [h.slug, h])).values()
+    ]
 
-  console.log('[IntentMatch] Candidates:', {
-    tools: uniqueTools.map(t => t.slug),
-    knowledge: uniqueKnowledge.map(k => k.slug)
-  })
+    const uniqueTools = [
+      ...new Map(toolsForPrompt.map(t => [t.slug, t])).values()
+    ]
 
-  // ==========================================================
-  // FAST PATH (SKIP PLANNER)
-  // ==========================================================
+    const uniqueKnowledge = [
+      ...new Map(knowledgeForPrompt.map(k => [k.slug, k])).values()
+    ]
 
-  // 1️ ONLY ONE TOOL → DIRECT EXECUTION
-  if (uniqueTools.length === 1 && uniqueKnowledge.length === 0) {
-    console.log('[IntentMatch] Single tool detected → skip planner')
-    return {
-      tools: [uniqueTools[0].slug],
-      knowledge: [],
-      chat: false
-    }
-  }
-
-  // 2️ ONLY ONE KNOWLEDGE → DIRECT EXECUTION
-  if (uniqueKnowledge.length === 1 && uniqueTools.length === 0) {
-    console.log('[IntentMatch] Single knowledge detected → skip planner')
-    return {
-      tools: [],
-      knowledge: [uniqueKnowledge[0].slug],
-      chat: false
-    }
-  }
-
-  // 3️ Planner disabled → run all candidates
-  if (!usePlan) {
-    console.log('[IntentMatch] Planner disabled → run all candidates')
-    return {
+    console.log('[IntentMatch] Candidates:', {
       tools: uniqueTools.map(t => t.slug),
-      knowledge: uniqueKnowledge.map(k => k.slug),
-      chat: uniqueTools.length === 0 && uniqueKnowledge.length === 0
+      knowledge: uniqueKnowledge.map(k => k.slug)
+    })
+
+    // ==========================================================
+    // FAST PATH (SKIP PLANNER)
+    // ==========================================================
+    // 0️ ONLY ONE HANDLER → DIRECT EXECUTION
+    if (uniqueHandler.length === 1) {
+      console.log('[IntentMatch] Single handler detected → skip planner')
+      return {
+        handlers: [String(uniqueHandler[0].slug)],
+        tools: [],
+        knowledge: [],
+        chat: false
+      }
     }
+
+    // 1️ ONLY ONE TOOL → DIRECT EXECUTION
+    if (uniqueTools.length === 1 && uniqueKnowledge.length === 0) {
+      console.log('[IntentMatch] Single tool detected → skip planner')
+      return {
+        handlers: [],
+        tools: [uniqueTools[0].slug],
+        knowledge: [],
+        chat: false
+      }
+    }
+
+    // 2️ ONLY ONE KNOWLEDGE → DIRECT EXECUTION
+    if (uniqueKnowledge.length === 1 && uniqueTools.length === 0) {
+      console.log('[IntentMatch] Single knowledge detected → skip planner')
+      return {
+        handlers: [],
+        tools: [],
+        knowledge: [uniqueKnowledge[0].slug],
+        chat: false
+      }
+    }
+
+    // 3️ Planner disabled → run all candidates
+    if (!usePlan) {
+      console.log('[IntentMatch] Planner disabled → run all candidates')
+      return {
+        handlers: uniqueHandler.map(h => h.slug ?? ''),
+        tools: uniqueTools.map(t => t.slug),
+        knowledge: uniqueKnowledge.map(k => k.slug),
+        chat: uniqueTools.length === 0 && uniqueKnowledge.length === 0
+      }
+    }
+
+    // ==========================================================
+    //  CALL LLM PLANNER (MULTI CANDIDATE)
+    // ==========================================================
+    console.log('[IntentMatch] Multiple candidates → calling planner')
+
+    const plan = await toolPlannerService.plan({
+      userText: input.text,
+      candidates: {
+        tools: uniqueTools.map(t => t.slug),
+        knowledge: uniqueKnowledge.map(k => k.slug),
+        toolsDetails: uniqueTools,
+        knowledgeDetails: uniqueKnowledge
+      },
+      language: input.language
+    })
+
+    return plan
   }
-
-  // ==========================================================
-  //  CALL LLM PLANNER (MULTI CANDIDATE)
-  // ==========================================================
-  console.log('[IntentMatch] Multiple candidates → calling planner')
-
-  const plan = await toolPlannerService.plan({
-    userText: input.text,
-    candidates: {
-      tools: uniqueTools.map(t => t.slug),
-      knowledge: uniqueKnowledge.map(k => k.slug),
-      toolsDetails: uniqueTools,
-      knowledgeDetails: uniqueKnowledge
-    },
-    language: input.language
-  })
-
-  return plan
-}
 
   // ============================================================
   // STAGE 3 — PARAM EXTRACTION
@@ -633,7 +674,28 @@ private async matchIntent(
         results.knowledge = { error: String(error) }
       }
     }
-    
+
+    // ============================================================
+    // CASE 4: Execute Handler from safePlan (NO param extraction needed)
+    // ============================================================
+    if (safePlan.handlers && safePlan.handlers.length > 0) {
+      try {
+        // Use handler strategy via execution context
+        const handlerResult = await this.executeHandlerWithContext(safePlan.handlers, context)
+        
+        // console.log('[ExecuteSafePlan] Handler result:', handlerResult)
+        // Return single value if only one handler
+        if (safePlan.handlers.length === 1) {
+          results.handler = handlerResult
+        } else {
+          results.handler = handlerResult
+        }
+      } catch (error) {
+        console.error(`[ExecuteSafePlan] Failed handler execution:`, error)
+        results.handler = { error: String(error) }
+      }
+    }
+    console.log(`[ExecuteSafePlan] Results:`, results)
     return results
   }
 
@@ -720,6 +782,58 @@ private async matchIntent(
     // SAME AS TOOL: Promise.all + settle normalization
     // =========================================================
     const settled = await Promise.all(knowledgePromises)
+
+    const results: Record<string, unknown> = {}
+
+    for (const res of settled) {
+      if (res.status === 'fulfilled') {
+        results[res.slug] = res.value
+      } else {
+        results[res.slug] = {
+          error: String(res.reason),
+        }
+      }
+    }
+
+    return results
+  }
+
+  // ============================================================
+  // HELPER: Execute handler using execution context (RAG-safe)
+  // ============================================================
+  private async executeHandlerWithContext(
+    handlers: any[],
+    context: any
+  ): Promise<Record<string, unknown>> {
+    console.log(`[ExecuteHandlersWithContext] Executing ${handlers.length} knowledge(s)`)
+
+    const handlerPromises = handlers.map(async (handler) => {
+      try {
+        const result = await executionContext.run("handler", {handlerKey: handler}, {}, context)
+        return {
+          slug: handler,
+          status: 'fulfilled' as const,
+          value: result,
+        }
+
+      } catch (error) {
+        console.error(
+          `[ExecuteHandlersWithContext] Failed knowledge ${handler.slug}:`,
+          error
+        )
+
+        return {
+          slug: handler,
+          status: 'rejected' as const,
+          reason: error,
+        }
+      }
+    })
+
+    // =========================================================
+    // SAME AS TOOL: Promise.all + settle normalization
+    // =========================================================
+    const settled = await Promise.all(handlerPromises)
 
     const results: Record<string, unknown> = {}
 

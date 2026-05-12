@@ -24,6 +24,13 @@ module.exports = {
         createdAt: now,
         updatedAt: now,
       },
+      {
+        intentId: getId(intents, 'knowledge_workin'),
+        knowledgeId: getId(knowledge, 'leave_faq'),
+        priority: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
     ])
   },
 

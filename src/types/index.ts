@@ -114,6 +114,7 @@ export interface PlannerInput {
 }
 
 export interface PlannerOutput {
+  handlers?: string[];
   tools: string[];
   knowledge: string[];
   chat: boolean;
@@ -163,15 +164,9 @@ export interface PipelineError {
 // API Handler Types
 // ============================================================
 
-export type HandlerContext = {
-  user_id: string
-  app_name: string
-  chat_history: ChatMessage[]
-}
-
 export type ApiHandlerFn = (
   params: Record<string, unknown>,
-  ctx: HandlerContext
+  ctx: IntentRequest
 ) => Promise<unknown>
 
 // ============================================================

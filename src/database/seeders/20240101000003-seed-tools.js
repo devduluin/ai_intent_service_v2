@@ -10,7 +10,7 @@ module.exports = {
       {
         name: 'Weather API',
         slug: 'get_weather',
-        description: 'Ambil data cuaca dari OpenWeather',
+        description: 'Gunakan API ini untuk mendapatkan cuaca',
         method: 'GET',
         url: 'https://api.openweathermap.org/data/2.5/weather?q={city}&appid=a4a3c3f31f794e6c47a505350f5ad847&units=metric',
         authType: 'none',
@@ -33,7 +33,7 @@ module.exports = {
       {
         name: 'World Time API',
         slug: 'get_time',
-        description: 'Ambil waktu dunia berdasarkan timezone',
+        description: 'Gunakan API ini untuk mendapatkan cuaca',
         method: 'GET',
         url: 'https://timeapi.io/api/v1/time/current/zone?timezone={timezone}',
         authType: 'none',

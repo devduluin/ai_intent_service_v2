@@ -8,6 +8,7 @@ export const config = {
   // Default provider: 'openai' atau 'ollama'
   default: {
     provider: process.env.DEFAULT_PROVIDER || 'ollama', // atau 'openai'
+    numPredict: parseInt(process.env.DEFAULT_NUM_PREDICTIONS ?? '256'),
   },
   
   server: {
