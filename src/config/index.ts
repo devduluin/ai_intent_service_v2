@@ -23,6 +23,7 @@ export const config = {
     user: process.env.DB_USER ?? 'postgres',
     pass: process.env.DB_PASS ?? 'postgres',
     name: process.env.DB_NAME ?? 'ai_intent',
+    ssl:  process.env.DB_SSL === 'true',
   },
 
   ollama: {

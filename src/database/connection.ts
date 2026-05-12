@@ -13,6 +13,12 @@ export const sequelize = new Sequelize({
   password: config.db.pass,
   database: config.db.name,
   logging:  config.server.env === 'development' ? console.log : false,
+  dialectOptions: {
+    ssl: config.db.ssl ? {
+      require:            true,
+      rejectUnauthorized: false,
+    } : false,
+  },
   pool: {
     max:     10,
     min:     2,

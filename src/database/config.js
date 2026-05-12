@@ -37,10 +37,10 @@ module.exports = {
     dialect:  'postgres',
     logging:  false,
     dialectOptions: {
-      ssl: {
+      ssl: process.env.DB_SSL === 'true' ? {
         require:            true,
         rejectUnauthorized: false,
-      },
+      } : false,
     },
     pool: {
       max:     10,
