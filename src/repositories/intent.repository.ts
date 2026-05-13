@@ -199,6 +199,8 @@ export class IntentRepository {
           type: m.knowledge.type,
           content: m.knowledge.content,
           isActive: m.knowledge.isActive,
+          ingestionStatus: m.knowledge.ingestionStatus,
+          lastIngestedAt: m.knowledge.lastIngestedAt,
         },
       }))
   }

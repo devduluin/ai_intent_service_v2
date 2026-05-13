@@ -7,6 +7,9 @@ import IntentToolMappingModel from './Intent-tool-mapping.model'
 import IntentKnowledgeMappingModel from './Intent-knowledge-mapping.model'
 import AgentModel from './agent.model'
 
+import KnowledgeSourceModel from './Knowledge-source.model'
+import KnowledgeChunkModel from './Knowledge-chunk.model';
+
 export function setupAssociations() {
   // =========================
   // AGENT → INTENT
@@ -118,3 +121,49 @@ export function setupAssociations() {
     as: 'knowledge',
   })
 }
+
+
+// =========================
+  // KNOWLEDGE → SOURCE
+  // =========================
+
+  KnowledgeModel.hasMany(KnowledgeSourceModel, {
+    foreignKey: 'knowledgeId',
+    as: 'sources',
+    onDelete: 'CASCADE',
+  })
+
+  KnowledgeSourceModel.belongsTo(KnowledgeModel, {
+    foreignKey: 'knowledgeId',
+    as: 'knowledge',
+  })
+
+  // =========================
+  // KNOWLEDGE → CHUNKS
+  // =========================
+
+  KnowledgeModel.hasMany(KnowledgeChunkModel, {
+    foreignKey: 'knowledgeId',
+    as: 'chunks',
+    onDelete: 'CASCADE',
+  })
+
+  KnowledgeChunkModel.belongsTo(KnowledgeModel, {
+    foreignKey: 'knowledgeId',
+    as: 'knowledge',
+  })
+
+  // =========================
+  // SOURCE → CHUNKS
+  // =========================
+
+  KnowledgeSourceModel.hasMany(KnowledgeChunkModel, {
+    foreignKey: 'sourceId',
+    as: 'chunks',
+    onDelete: 'CASCADE',
+  })
+
+  KnowledgeChunkModel.belongsTo(KnowledgeSourceModel, {
+    foreignKey: 'sourceId',
+    as: 'source',
+  })

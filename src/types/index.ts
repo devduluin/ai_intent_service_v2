@@ -40,6 +40,8 @@ export interface Knowledge {
   type: 'faq' | 'article' | 'policy'
   content: string
   isActive: boolean
+  ingestionStatus: 'idle' | 'processing' | 'completed' | 'failed'
+  lastIngestedAt?: Date | null
 }
 
 export interface IntentExample {
@@ -270,4 +272,13 @@ export interface PendingIntentState {
   
   // User context
   lastUserMessage?: string
+}
+
+
+export type bodyKnowledgeSource = {
+  knowledgeId: string
+  type: 'url' | 'pdf' | 'docx' | 'text'
+  content?: string | null
+  url?: string | null
+  filePath?: string | null
 }

@@ -1,83 +1,112 @@
-                ┌──────────────┐
-User Input ───► │   INTENT     │  (Router)
-                └──────┬───────┘
-                       │
-     ┌─────────────────┼──────────────────┐
-     │                 │                  │
- tool mapping     knowledge mapping   handlerKey
-     │                 │                  │
-Tool API          RAG / FAQ DB        internal function
+agents (1) ─────< (N) intents
+                         │
+                         ├──< (N) intent_examples
+                         │
+                         ├──>< (intent_tool_mappings) >── tools
+                         │         │
+                         │         toolId → tools (1)
+                         │
+                         └──>< (intent_knowledge_mappings) >── knowledge
+                                   │
+                                   knowledgeId → knowledge (1)
 
-Stage 0: Pre-processing & State Check
 
-1. Validasi agent (exists & active)
-2. Check pending conversation state
-   - Jika ada → resume intent
-   - Jika cancel → clear state
-3. Jika pending & user switch intent → clear state, process new intent
+schema ingestion layer :
 
-Stage 1: Intent Recognition
-1. Generate embedding dari user input (Ollama)
-2. Vector similarity search terhadap semua intent agent
-3. Sort matches by score (descending)
-4. Decision tree based on score:
-   - >= confidentThreshold → proceed to extraction
-   - >= clarifyThreshold → ask clarification
-   - < clarifyThreshold → general chat
+User → embedding → match intent_examples → dapat intent
+     → tool planning → ambil knowledge by intent
+     → LLM naturalisasi
 
-Stage 2: Parameter Extraction & Validation
-1. Extract parameters menggunakan LLM
-2. Validate required parameters
-3. If missing:
-   - Save state ke conversationStateService
-   - Generate pertanyaan untuk parameter yang kurang
-   - Return "missing_parameters" response
-4. If complete → proceed to execution
+services/crawler/
+   WebsiteCrawlerService.ts  ← main service
+   LinkDiscoveryService.ts   ← cari semua halaman
+   PageScraperService.ts     ← scrape halaman
+   HtmlCleaner.ts            ← bersihkan html
+   TextChunker.ts            ← split jadi chunks
 
-Stage 3: Intent Execution
-switch(executionType) {
-  case 'tool':
-    - Get primary tool (by priority)
-    - Execute via toolExecutorService
-    - Return API result
-  
-  case 'handler':
-    - Get registered handler function
-    - Execute with params + context
-    - Return handler result
-  
-  case 'knowledge':
-    - Retrieve relevant knowledge documents
-    - Augment prompt with knowledge
-    - Generate response via LLM
-  
-  case 'llm':
-    - Direct LLM call with params
-    - Return natural language response
+struktur knowledge :
+Knowledge (concept/topic)
+        │
+        ├── KnowledgeSource (raw data location)
+        │        ├── Web URL
+        │        ├── PDF
+        │        ├── Docx
+        │        └── Manual text
+        │
+        └── KnowledgeChunk (vector embeddings)
+
+1) User message
+2) Embed message
+3) Vector search → intent_examples
+4) Tool Planner decide:
+      tools[]
+      knowledge[]
+      chat
+
+5) IF knowledge[] NOT EMPTY
+      → search knowledge_chunks
+   ELSE
+      → skip knowledge retrieval
+
+6) Execute tools (if any)
+7) Naturalize response with:
+      tool results + knowledge chunks
+
+Flow ingestion final
+1️⃣ Save knowledge
+2️⃣ Save knowledge_source
+3️⃣ Chunk text
+4️⃣ Save chunks → Postgres
+5️⃣ Index chunks → Chroma  ← call knowledgeVectorService.indexChunks()
+
+
+KnowledgeSource created
+      ↓
+KnowledgeIngestionService ⭐
+      ↓
+Postgres chunks
+      ↓
+Chroma indexed
+
+
+
+Final Knowledge Pipeline
+Admin Upload Source
+        ↓
+API publish event → RabbitMQ
+        ↓
+KnowledgeIngestionWorker (consumer)
+        ↓
+KnowledgeIngestionService.ingestSource()
+        ↓
+Postgres (chunks) + Chroma (vectors)
+        ↓
+AI RAG ready
+
+
+| Layer           | Role                 |
+| --------------- | -------------------- |
+| Knowledge       | Container / Document |
+| KnowledgeSource | Raw data             |
+| KnowledgeChunk  | Chunk for RAG        |
+| Chroma          | Vector search        |
+
+
+POST /admin/knowledge
+{
+  "slug": "leave_policy",
+  "title": "Cuti Tahunan",
+  "type": "policy"
 }
 
-Stage 4: Naturalization
-1. Ambil raw result dari execution
-2. Convert ke natural language via Ollama
-3. Personalize based on user language
-4. Return final response
-
-Error Types
-- embed: Gagal generate embedding
-- api: Gagal extract parameter atau eksekusi
-- naturalize: LLM naturalisasi gagal
-- unknown: Unknown pipeline error
-
-Multi-tenant Architecture
-// Setiap agent memiliki isolasi:
-- Intent database (filter by agentId)
-- Knowledge base (filter by agentId)
-- Tools mapping (filter by agentId)
-- Conversation state (key: user_id:app_name)
-
-// Contoh request:
+POST /admin/knowledge/knowledge-source
 {
-  user_id: "user123",
-  app_name: "travel-agent",  // agent slug
-  text: "Book flight to Jakarta"
+    "knowledgeId": "781f7f5f-9f44-49e4-8064-c95b9cd0ae49",
+    "type": "text",
+    "content": "**Lupa Absen**\n- Hubungi HR maksimal H+1 untuk koreksi manual\n- Lampirkan bukti kehadiran (foto selfie/timeline)\n\n**Absen dari luar kantor**\n- Wajib dapat persetujuan atasan via email/chat\n- Gunakan fitur presensi dengan status tugas di luar di aplikasi Workin\n\n**Tidak Bisa Absen**\n- Pastikan koneksi internet stabil\n- Wajib periksa shift atau jadwal hari ini\n- Restart aplikasi Workin dan coba lagi\n- Hubungi HR anda jika masalah berlanjut\n- Jika masih ada kendala, anda juga bisa pakai offline mode"
+}
+{
+  "knowledgeId": "781f7f5f-9f44-49e4-8064-c95b9cd0ae49",
+  "type": "url",
+  "url": "https://docs.workin.duluin.com"
 }

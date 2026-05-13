@@ -1,6 +1,7 @@
 import { ollamaService } from './ollama.service'
 
 import { vectorService } from './vector.service'
+import { knowledgeVectorService } from './knowledgeVector.service'
 import { intentRegistry } from './intent-registry.service'
 import { paramExtractorService } from './paramExtractor.service'
 import { clarificationService } from './clarification.service'
@@ -79,11 +80,16 @@ class PipelineService {
         agentId: agent?.id
       })
 
+      console.log("[Intents]:", intents)
+
       const queryEmbedding = await this.embedQuery(input.text, agent?.id)
       
       const plannerOutput = await this.matchIntent(queryEmbedding, intents, agent, input)
 
       console.log("[Planner Raw]:", plannerOutput)
+
+      
+
       //hasil : [Planner Raw]: { handler: [ 'greeting' ], tools: [], knowledge: [], chat: false }
 
       //handle untuk intent handler
@@ -745,23 +751,125 @@ class PipelineService {
     return results
   }
 
-  // ============================================================
-  // HELPER: Execute knowledge using execution context (RAG-safe)
-  // ============================================================
+  // // ============================================================
+  // // HELPER: Execute knowledge using execution context (RAG-safe)
+  // // ============================================================
+  // private async executeKnowledgesWithContext(
+  //   knowledges: Knowledge[],
+  //   context: any
+  // ): Promise<Record<string, unknown>> {
+  //   console.log(`[ExecuteKnowledgesWithContext] Executing ${knowledges.length} knowledge(s)`)
+
+  //   const knowledgePromises = knowledges.map(async (knowledge) => {
+  //     console.log("[ExecuteKnowledgesWithContext] Executing knowledge:", context.text)
+
+  //     //vector search knowledge chunk
+  //     try {
+  //       const result = knowledge.content
+
+  //       return {
+  //         slug: knowledge.slug,
+  //         status: 'fulfilled' as const,
+  //         value: result,
+  //       }
+
+  //     } catch (error) {
+  //       console.error(
+  //         `[ExecuteKnowledgesWithContext] Failed knowledge ${knowledge.slug}:`,
+  //         error
+  //       )
+
+  //       return {
+  //         slug: knowledge.slug,
+  //         status: 'rejected' as const,
+  //         reason: error,
+  //       }
+  //     }
+  //   })
+
+  //   // =========================================================
+  //   // SAME AS TOOL: Promise.all + settle normalization
+  //   // =========================================================
+  //   const settled = await Promise.all(knowledgePromises)
+
+  //   const results: Record<string, unknown> = {}
+
+  //   for (const res of settled) {
+  //     if (res.status === 'fulfilled') {
+  //       results[res.slug] = res.value
+  //     } else {
+  //       results[res.slug] = {
+  //         error: String(res.reason),
+  //       }
+  //     }
+  //   }
+
+  //   return results
+  // }
+
   private async executeKnowledgesWithContext(
     knowledges: Knowledge[],
     context: any
   ): Promise<Record<string, unknown>> {
-    console.log(`[ExecuteKnowledgesWithContext] Executing ${knowledges.length} knowledge(s)`)
+
+    console.log(
+      `[ExecuteKnowledgesWithContext] Executing ${knowledges.length} knowledge(s)`
+    )
+
+    if (!knowledges.length) return {}
+
+    // 1️⃣ Embed user query once
+    const queryEmbedding = await ollamaService.embed(context.text)
 
     const knowledgePromises = knowledges.map(async (knowledge) => {
+      console.log(
+        `[ExecuteKnowledgesWithContext] Vector search for: ${knowledge.slug}`
+      )
+
       try {
-        const result = knowledge.content
+        // 2️⃣ Scoped vector search (planner-approved)
+        const searchResult =
+          await knowledgeVectorService.searchKnowledgeChunks({
+            embedding: queryEmbedding,
+            knowledgeIds: [knowledge.id],
+            topK: 5,
+          })
+
+        // 3️⃣ fallback if not ingested yet
+        if (!searchResult.length) {
+          console.warn(
+            `[ExecuteKnowledgesWithContext] No chunks → fallback raw: ${knowledge.slug}`
+          )
+
+          return {
+            slug: knowledge.slug,
+            status: 'fulfilled' as const,
+            value: {
+              type: 'knowledge',
+              source: knowledge.slug,
+              context: knowledge.content,
+              chunksFound: 0,
+            },
+          }
+        }
+
+        // 4️⃣ Build RAG context
+        const ragContext = searchResult
+          .map(chunk => {
+            const score = chunk.score.toFixed(3)
+            return `[score:${score}] ${chunk.content}`
+          })
+          .join('\n\n---\n\n')
 
         return {
           slug: knowledge.slug,
           status: 'fulfilled' as const,
-          value: result,
+          value: {
+            type: 'knowledge',
+            source: knowledge.slug,
+            context: ragContext,
+            chunksFound: searchResult.length,
+          },
         }
 
       } catch (error) {
@@ -778,9 +886,6 @@ class PipelineService {
       }
     })
 
-    // =========================================================
-    // SAME AS TOOL: Promise.all + settle normalization
-    // =========================================================
     const settled = await Promise.all(knowledgePromises)
 
     const results: Record<string, unknown> = {}
@@ -789,9 +894,7 @@ class PipelineService {
       if (res.status === 'fulfilled') {
         results[res.slug] = res.value
       } else {
-        results[res.slug] = {
-          error: String(res.reason),
-        }
+        results[res.slug] = { error: String(res.reason) }
       }
     }
 

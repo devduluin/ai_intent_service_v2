@@ -2,6 +2,7 @@ import { buildApp } from './app'
 import { config } from './config'
 import { connectDatabase } from './database/connection'
 import { vectorService } from './services/vector.service'
+import { knowledgeVectorService } from './services/knowledgeVector.service'
 import { intentRegistry } from './services/intent-registry.service'
 import { intentRepository } from './repositories/intent.repository'
 import { registerAllIntents } from './intents'
@@ -34,6 +35,7 @@ async function start() {
     // 4. Init vector DB (ChromaDB)
     app.log.info('Connecting to ChromaDB...')
     await vectorService.init()
+    await knowledgeVectorService.init()
     await vectorService.resetCollection()
 
     // 5. Index intent dari DB ke vector DB
