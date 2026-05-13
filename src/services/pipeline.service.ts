@@ -34,12 +34,13 @@ class PipelineService {
   // ============================================================
   async run(input: PipelineInput): Promise<PipelineResult> {
     const startTotal = Date.now()
+    const latency: Record<string, number> = {}
 
     // ============================================================
     // Get agent by slug from input.app_name
     // ============================================================
     const agent = await this.getAgentBySlug(input.app_name)
-  
+
     try {
       PipelineValidator.validateAgent(agent, input.app_name)
     } catch (err: any) {
@@ -66,7 +67,7 @@ class PipelineService {
     }
 
     // console.log(`[DEBUG] Initial State Check for ${input.user_id}:`, pending ? `Found intents: ${pending.intentSlugs}` : "Empty");
-    
+
     if (pending) {
       return await this.resumePendingIntent(input, pending, agent, startTotal)
     }
@@ -79,20 +80,15 @@ class PipelineService {
         agentId: agent?.id
       })
 
+      const startEmbed = Date.now()
       const queryEmbedding = await this.embedQuery(input.text, agent?.id)
-      
+      latency.embed = Date.now() - startEmbed
+
+      const startMatch = Date.now()
       const plannerOutput = await this.matchIntent(queryEmbedding, intents, agent, input)
+      latency.match = Date.now() - startMatch
 
       console.log("[Planner Raw]:", plannerOutput)
-      //hasil : [Planner Raw]: { handler: [ 'greeting' ], tools: [], knowledge: [], chat: false }
-
-      //handle untuk intent handler
-      // if (plannerOutput.handlers && plannerOutput.handlers.length > 0) {
-      //   console.log("[Planner Handler]:", plannerOutput.handlers)
-      //    const result = await executionContext.run("handler", {handlerKey: plannerOutput.handlers[0]}, {}, input)
-      //    console.log("[Planner Handler Result]:", result)
-      //    // hasil :[Planner Handler Result]: { success: true, message: 'Hello! user_1!' }
-      // }
 
       const safePlan: PlannerOutput = {
         handlers: plannerOutput.handlers,
@@ -108,51 +104,40 @@ class PipelineService {
           intent: 'general_chat',
           score: 1,
           message: aiResponse
-        }, startTotal);
+        }, startTotal, latency);
       }
-      
+
       // ============================================================
       // PARAM EXTRACTION LANGSUNG DARI SAFEPLAN.TOOLS
       // ============================================================
       let safeParams: Record<string, unknown> = {};
-      
+
       if (safePlan.tools.length > 0) {
+        const startExtract = Date.now()
         // Extract params ONLY for tools
         const extractedParams = await this.extractParamsForTools(
-          input.text, 
+          input.text,
           safePlan.tools
         )
-        
+        latency.extract = Date.now() - startExtract
+
         // Hydrate dengan user attributes
         safeParams = paramHydratorService.hydrate(
           extractedParams,
           input.attributes
         )
-        
+
         // CEK MISSING PARAMS
         const allTools = await toolService.getToolsBySlugs(safePlan.tools)
-        // console.log('[DEBUG] Tool details:', allTools.map(t => ({
-        //   slug: t.slug,
-        //   parameters: t.parameters?.map(p => ({
-        //     name: p.name,
-        //     isRequired: p.isRequired,
-        //     defaultValue: p.defaultValue
-        //   }))
-        // })))
         const missingToolsParams = await toolService.getMissingParamsForTools(allTools, safeParams)
-        
-        // console.log('[Pipeline] Missing params per tool:', missingToolsParams.map(m => ({
-        //   tool: m.tool.slug,
-        //   missing: m.missing
-        // })))
-        
+
         // Jika ada missing params, handle slot filling
         if (missingToolsParams.length > 0) {
           // Cari intents yang memiliki tools ini untuk konteks slot filling
-          const relevantIntents = intents.filter(intent => 
+          const relevantIntents = intents.filter(intent =>
             intent.tools?.some(t => safePlan.tools.includes(t.tool?.slug))
           )
-          
+
           return this.handleMissingParametersForTools(
             input,
             relevantIntents.length > 0 ? relevantIntents : intents,
@@ -167,11 +152,15 @@ class PipelineService {
       // ============================================================
       // EKSEKUSI INTENTS (pakai selectedIntents untuk handler)
       // ============================================================
+      const startExecute = Date.now()
       const apiResults = await this.executeSafePlan(input, safePlan, safeParams)
+      latency.execute = Date.now() - startExecute
 
       // console.log('[Pipeline] API Results:', apiResults)
-     
+
+      const startNaturalize = Date.now()
       const naturalResponse = await this.naturalize(input, apiResults)
+      latency.naturalize = Date.now() - startNaturalize
 
       const intentLabel = [
         ...safePlan.tools,
@@ -183,7 +172,8 @@ class PipelineService {
         1,
         apiResults,
         naturalResponse,
-        startTotal
+        startTotal,
+        latency
       )
 
     } catch (err) {
@@ -197,21 +187,22 @@ class PipelineService {
   private async resumePendingIntent(
     input: PipelineInput,
     pending: PendingIntentState,
-    agent: AgentResponse | null, 
+    agent: AgentResponse | null,
     startTotal: number,
   ): Promise<PipelineResult> {
     console.log(`[Resuming] Found pending state:`, pending);
+    const latency: Record<string, number> = {}
 
     // ============================================================
     // 1. RESOLVE INTENTS dari slugs
     // ============================================================
     const intentSlugs: string[] = pending.intentSlugs || [];
     const intents = intentRegistry.getBySlugs(intentSlugs, agent?.id);
-    
+
     if (!intents.length) {
       console.error('[Resuming] No intents found for slugs:', intentSlugs);
       conversationStateService.clear(input.user_id, input.app_name);
-      
+
       const aiResponse = await generalChatService.handle(input);
       return PipelineFormatter.buildEarly({
         intent: 'general_chat',
@@ -223,7 +214,7 @@ class PipelineService {
     // ============================================================
     // 2. GET MISSING TOOLS PARAMS FROM STATE
     // ============================================================
-    const missingToolsParams: Array<{ toolSlug: string; missing: string[] }> = 
+    const missingToolsParams: Array<{ toolSlug: string; missing: string[] }> =
       pending.missingToolsParams || []
 
     const allMissingParamNames = missingToolsParams.flatMap(m => m.missing)
@@ -247,17 +238,19 @@ class PipelineService {
         }
       }
     }
-    
+
     console.log('[Resuming] Relevant params for extraction:', relevantParams.map(p => p.name))
 
     // ============================================================
     // 4. Extract params dari user input
     // ============================================================
+    const startExtract = Date.now()
     const newParams = await paramExtractorService.extractAll(
-      input.text, 
+      input.text,
       relevantParams
     );
-    
+    latency.extract = (latency.extract || 0) + (Date.now() - startExtract)
+
     // Merge dengan collected params sebelumnya
     const mergedParams = paramHydratorService.hydrate(
       {
@@ -291,11 +284,11 @@ class PipelineService {
     if (stillMissing.length > 0) {
       // Cek apakah user benar-benar menjawab parameter atau keluar flow
       const isAnsweringParam = PipelineValidator.isUserAnsweringParameter(input.text);
-      
+
       if (!isAnsweringParam) {
         conversationStateService.incrementRetry(input.user_id, input.app_name);
         const state = conversationStateService.get(input.user_id, input.app_name);
-        
+
         if (!state) {
           conversationStateService.clear(input.user_id, input.app_name);
           const aiResponse = await generalChatService.handle(input);
@@ -303,10 +296,10 @@ class PipelineService {
             intent: 'general_chat',
             score: 0,
             message: aiResponse
-          }, startTotal);
+          }, startTotal, latency);
         }
       }
-      
+
       // Lanjutkan slot filling
       return this.handleMissingParametersForTools(
         input,
@@ -317,32 +310,37 @@ class PipelineService {
         originalPlan
       );
     }
-    
+
     // ============ SEMUA PARAMETER LENGKAP → EKSEKUSI ============
     conversationStateService.clear(input.user_id, input.app_name);
-    
+
     console.log(`[Resuming] All params complete. Executing with plan:`, originalPlan);
 
     const lastUserMessage = pending.lastUserMessage || input.text;
     console.log('[Resuming] Original question:', lastUserMessage);
-    
+
     // Execute dengan originalPlan yang lengkap (tools + knowledge)
+    const startExecute = Date.now()
     const apiResults = await this.executeSafePlan(input, originalPlan, mergedParams);
+    latency.execute = Date.now() - startExecute
 
     const naturalizeInput: PipelineInput = {
       ...input,
       text: lastUserMessage  // ← Gunakan pertanyaan asli, bukan "jakarta"
     };
-    
+
+    const startNaturalize = Date.now()
     const naturalResponse = await this.naturalize(naturalizeInput, apiResults)
-    
+    latency.naturalize = Date.now() - startNaturalize
+
     // Return response yang menggabungkan kedua hasil
     return PipelineFormatter.buildSuccessMulti(
       originalPlan.tools.concat(originalPlan.knowledge).join(','),
       1,
       apiResults,
       naturalResponse,
-      startTotal
+      startTotal,
+      latency
     );
   }
 
@@ -352,18 +350,18 @@ class PipelineService {
   private async embedQuery(text: string, agentId?: string): Promise<number[]> {
     try {
       const normalizedText = text.toLowerCase().trim()
-      
+
       if (!config.cache.enableEmbeddingCache) {
         return await circuitBreaker.call(() => ollamaService.embed(normalizedText))
       }
-      
+
       const embedding = await embeddingCache.getOrCompute(
         normalizedText,
         async () => await circuitBreaker.call(() => ollamaService.embed(normalizedText)),
         agentId,
         config.cache.embeddingTTL
       )
-      
+
       return embedding
     } catch (err) {
       throw PipelineFormatter.buildError('embed', 'Gagal generate embedding', err)
@@ -374,16 +372,16 @@ class PipelineService {
   // STAGE 2 — INTENT MATCHING VECTOR AND PLANNER
   // ============================================================
   private async matchIntent(
-    embedding: number[], 
-    intents: Intent[], 
-    agent: AgentResponse | null, 
+    embedding: number[],
+    intents: Intent[],
+    agent: AgentResponse | null,
     input: PipelineInput,
     usePlan: boolean = true
   ): Promise<PlannerOutput> {
 
     const matches = await vectorService.findIntent(
-      embedding, 
-      intents, 
+      embedding,
+      intents,
       agent as AgentResponse
     )
 
@@ -407,17 +405,17 @@ class PipelineService {
       .filter(m => m.intent.knowledge && m.intent.knowledge.length > 0)
       .map(m => m.intent)
 
-     // ----------------------------------------------------------
+    // ----------------------------------------------------------
     // BUILD HANDLER CANDIDATES
     // ----------------------------------------------------------
     const handlerForPrompt = handlerIntents.flatMap(intent => {
-        return {
-          slug: intent.handlerKey,
-          name: intent.name,
-          description: intent.description,
-          intentSlug: intent.slug,
-          intentName: intent.name
-        }
+      return {
+        slug: intent.handlerKey,
+        name: intent.name,
+        description: intent.description,
+        intentSlug: intent.slug,
+        intentName: intent.name
+      }
     })
 
     // ----------------------------------------------------------
@@ -542,11 +540,11 @@ class PipelineService {
   // STAGE 3 — PARAM EXTRACTION
   // ============================================================
   private async extractParamsForTools(
-    text: string, 
+    text: string,
     toolSlugs: string[]
   ): Promise<Record<string, unknown>> {
     if (!toolSlugs.length) return {};
-    
+
     // Use the dedicated param cache service
     return await paramCacheService.getOrExtract(
       text,
@@ -567,7 +565,7 @@ class PipelineService {
     params?: Record<string, unknown> // params jadi optional
   ): Promise<Record<string, unknown>> {
     const results: Record<string, unknown> = {}
-    
+
     // Prepare context for execution strategies
     const context = {
       user_id: input.user_id,
@@ -577,13 +575,13 @@ class PipelineService {
       chat_history: input.chat_history ?? [],
       attributes: input.attributes,
     }
-    
+
     // ============================================================
     // CASE 1: Pure Chat
     // ============================================================
     if (safePlan.chat === true && safePlan.tools.length === 0 && safePlan.knowledge.length === 0) {
       console.log(`[ExecuteSafePlan] Pure chat mode - using LLM strategy`)
-      
+
       try {
         const result = await executionContext.run(
           "llm",
@@ -597,49 +595,49 @@ class PipelineService {
         console.error(`[ExecuteSafePlan] Failed chat:`, error)
         results.chat = { error: String(error) }
       }
-      
+
       return results
     }
-    
+
     // ============================================================
     // CASE 2: Execute Tools from safePlan (with param extraction)
     // ============================================================
     if (safePlan.tools.length > 0) {
       // Extract params ONLY for tools
       const extractedParams = await this.extractParamsForTools(
-        input.text, 
+        input.text,
         safePlan.tools
       )
-      
+
       // Hydrate with user attributes
       const safeParams = paramHydratorService.hydrate(
         extractedParams,
         input.attributes
       )
-      
+
       // console.log('[ExecuteSafePlan] Extracted params for tools:', safeParams)
-      
+
       // Check missing params
       const allTools = await toolService.getToolsBySlugs(safePlan.tools)
       const missingToolsParams = await toolService.getMissingParamsForTools(allTools, safeParams)
-      
+
       // console.log('[ExecuteSafePlan] Missing params per tool:', missingToolsParams.map(m => ({
       //   tool: m.tool.slug,
       //   missing: m.missing
       // })))
-      
+
       // If missing params, throw or handle (but we're inside execute, so we'll return error)
       if (missingToolsParams.length > 0) {
         console.warn('[ExecuteSafePlan] Missing params detected, but this should be handled before executeSafePlan')
-        results.tools = { 
-          error: 'Missing parameters', 
+        results.tools = {
+          error: 'Missing parameters',
           missing: missingToolsParams,
           message: 'Please provide required parameters'
         }
       } else {
         // Execute tools with extracted params
         const toolResults = await this.executeToolsWithContext(allTools, safeParams, context)
-        
+
         // Return single value if only one tool
         if (allTools.length === 1) {
           results.tools = toolResults[allTools[0].slug]
@@ -648,7 +646,7 @@ class PipelineService {
         }
       }
     }
-    
+
     // ============================================================
     // CASE 3: Execute Knowledge from safePlan (NO param extraction needed)
     // ============================================================
@@ -661,7 +659,7 @@ class PipelineService {
       try {
         // Use knowledge strategy via execution context
         const knowledgeResult = await this.executeKnowledgesWithContext(allKnowledge, context)
-        
+
         // console.log('[ExecuteSafePlan] Knowledge result:', knowledgeResult)
         // Return single value if only one knowledge
         if (safePlan.knowledge.length === 1) {
@@ -682,7 +680,7 @@ class PipelineService {
       try {
         // Use handler strategy via execution context
         const handlerResult = await this.executeHandlerWithContext(safePlan.handlers, context)
-        
+
         // console.log('[ExecuteSafePlan] Handler result:', handlerResult)
         // Return single value if only one handler
         if (safePlan.handlers.length === 1) {
@@ -713,26 +711,26 @@ class PipelineService {
         // Filter params specific to this tool
         const toolParams = toolService.getToolParams(tool)
         const toolParamNames = new Set(toolParams.map(p => p.name))
-        
+
         const filteredParams: Record<string, unknown> = {}
         for (const [key, value] of Object.entries(params)) {
           if (toolParamNames.has(key) && value !== undefined && value !== null) {
             filteredParams[key] = value
           }
         }
-        
+
         // Execute tool using execution context
         const result = await executionContext.run("tool", tool, filteredParams, context)
-        
+
         return { slug: tool.slug, status: 'fulfilled' as const, value: result }
       } catch (error) {
         console.error(`[ExecuteToolsWithContext] Failed tool ${tool.slug}:`, error)
         return { slug: tool.slug, status: 'rejected' as const, reason: error }
       }
     })
-    
+
     const settledTools = await Promise.all(toolPromises)
-    
+
     const results: Record<string, unknown> = {}
     for (const res of settledTools) {
       if (res.status === 'fulfilled') {
@@ -741,7 +739,7 @@ class PipelineService {
         results[res.slug] = { error: String(res.reason) }
       }
     }
-    
+
     return results
   }
 
@@ -809,7 +807,7 @@ class PipelineService {
 
     const handlerPromises = handlers.map(async (handler) => {
       try {
-        const result = await executionContext.run("handler", {handlerKey: handler}, {}, context)
+        const result = await executionContext.run("handler", { handlerKey: handler }, {}, context)
         return {
           slug: handler,
           status: 'fulfilled' as const,
@@ -871,15 +869,15 @@ class PipelineService {
     missingToolsParams: ToolMissingParams[],
     params: Record<string, unknown>,
     start: number,
-    originalPlan: PlannerOutput 
+    originalPlan: PlannerOutput
   ): Promise<PipelineResult> {
 
     const intentSlugs = intents.map(i => i.slug)
-    
+
     // Simpan originalPlan dengan lengkap (termasuk knowledge)
     conversationStateService.set(input.user_id, input.app_name, {
       intentSlugs,
-      missingToolsParams: missingToolsParams.map(item => ({ 
+      missingToolsParams: missingToolsParams.map(item => ({
         toolSlug: item.tool.slug,
         toolName: item.tool.name,
         missing: item.missing
@@ -888,13 +886,13 @@ class PipelineService {
       lastUserMessage: input.text,
       maxRetry: 3,
       isMultiIntent: intents.length > 1,
-      originalPlan: { 
+      originalPlan: {
         tools: originalPlan.tools,      // ← tools tetap
         knowledge: originalPlan.knowledge,  // ← knowledge juga disimpan!
-        chat: originalPlan.chat 
+        chat: originalPlan.chat
       }
     })
-    
+
     console.log(`[SlotFilling] Missing tools/params:`, missingToolsParams.map(m => ({
       tool: m.tool.slug,
       missing: m.missing
@@ -920,7 +918,7 @@ class PipelineService {
     )
   }
 
-    
+
   // ============================================================
   // UTILS — GET AGENT
   // ============================================================

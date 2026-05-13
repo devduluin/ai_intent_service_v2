@@ -5,26 +5,26 @@ export class PipelineFormatter {
   /**
    * Membangun hasil untuk kasus awal/pre-execution 
    */
-  static buildEarly(decision: { intent: string, score: number, message: string }, startTime: number): PipelineResult {
+  static buildEarly(decision: { intent: string, score: number, message: string }, startTime: number, latency?: Record<string, number>): PipelineResult {
     return {
       intent: decision.intent,
       score: decision.score,
       apiResult: null,
       naturalResponse: decision.message,
-      metadata: this.getMetadata(startTime)
+      metadata: this.getMetadata(startTime, latency)
     };
   }
 
   /**
    * Membangun hasil sukses setelah eksekusi
    */
-  static buildSuccess(intentName: string, score: number, apiResult: any, response: string, startTime: number): PipelineResult {
+  static buildSuccess(intentName: string, score: number, apiResult: any, response: string, startTime: number, latency?: Record<string, number>): PipelineResult {
     return {
       intent: intentName,
       score: score,
       apiResult,
       naturalResponse: response,
-      metadata: this.getMetadata(startTime)
+      metadata: this.getMetadata(startTime, latency)
     };
   }
 
@@ -33,14 +33,15 @@ export class PipelineFormatter {
     score: number,
     apiResult: unknown,
     naturalResponse: string,
-    startTime: number
+    startTime: number,
+    latency?: Record<string, number>
   ): PipelineResult {
     return {
       intent: intentName,
       score,
       apiResult,
       naturalResponse,
-      metadata: this.getMetadata(startTime)
+      metadata: this.getMetadata(startTime, latency)
     }
   }
 
@@ -56,9 +57,10 @@ export class PipelineFormatter {
     };
   }
 
-  private static getMetadata(startTime: number) {
+  private static getMetadata(startTime: number, latency?: Record<string, number>) {
     return {
-      totalTime: Date.now() - startTime
+      total: Date.now() - startTime,
+      ...latency
     };
   }
 }

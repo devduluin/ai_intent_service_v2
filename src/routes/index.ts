@@ -10,6 +10,7 @@ export async function registerRoutes(fastify: FastifyInstance) {
   // Chat / Intent pipeline
   await fastify.register(intentRoutes, { prefix: '/intent' })
 
-  // future:
-  // await fastify.register(intentCrudRoutes, { prefix: '/admin/intents' })
+  // Admin routes for Dashboard
+  const { adminRoutes } = await import('./admin.route')
+  await fastify.register(adminRoutes, { prefix: '/admin' })
 }
