@@ -238,10 +238,10 @@ class PipelineService {
         }, apiResults)
       
       const intentLabel = [
-        ...safePlan.handlers,
-        ...safePlan.tools,
-        ...safePlan.knowledge
-      ].join(',')
+        ...(safePlan.handlers || []),
+        ...(safePlan.tools || []),
+        ...(safePlan.knowledge || [])
+      ].join(',');
 
       // ============================================================
       // STORE EPISODIC MEMORY
@@ -502,15 +502,7 @@ class PipelineService {
      // ----------------------------------------------------------
     // BUILD HANDLER CANDIDATES
     // ----------------------------------------------------------
-    const handlerForPrompt = handlerIntents.flatMap(intent => {
-        return {
-          slug: intent.handlerKey,
-          name: intent.name,
-          description: intent.description,
-          intentSlug: intent.slug,
-          intentName: intent.name
-        }
-    })
+    const handlerForPrompt = handlerIntents
 
     // ----------------------------------------------------------
     // BUILD TOOL CANDIDATES
@@ -571,7 +563,7 @@ class PipelineService {
     if (uniqueHandler.length === 1) {
       console.log('[IntentMatch] Single handler detected → skip planner')
       return {
-        handlers: [String(uniqueHandler[0].slug)],
+        handlers: [uniqueHandler[0].slug],
         tools: [],
         knowledge: [],
         chat: false
@@ -604,7 +596,7 @@ class PipelineService {
     if (!usePlan) {
       console.log('[IntentMatch] Planner disabled → run all candidates')
       return {
-        handlers: uniqueHandler.map(h => h.slug ?? ''),
+        handlers: uniqueHandler.map(h => h.slug),
         tools: uniqueTools.map(t => t.slug),
         knowledge: uniqueKnowledge.map(k => k.slug),
         chat: uniqueTools.length === 0 && uniqueKnowledge.length === 0
@@ -760,17 +752,17 @@ class PipelineService {
         // console.log('[ExecuteSafePlan] Handler result:', handlerResult)
         // Return single value if only one handler
         if (safePlan.handlers.length === 1) {
-          results.handler = handlerResult
+          results.handlers = handlerResult
         } else {
-          results.handler = handlerResult
+          results.handlers = handlerResult
         }
       } catch (error) {
         console.error(`[ExecuteSafePlan] Failed handler execution:`, error)
-        results.handler = { error: String(error) }
+        results.handlers = { error: String(error) }
       }
     }
     console.log(`[ExecuteSafePlan] Results:`, results)
-    return results
+    return results as PipelineResult
   }
 
   // ============================================================
