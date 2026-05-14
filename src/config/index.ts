@@ -75,6 +75,10 @@ export const config = {
     port: parseInt(process.env.REDIS_PORT ?? '6379'),
   },
 
+  rabbitmq: {
+    url: process.env.RABBITMQ_URL ?? 'amqp://localhost',
+  }
+
 } as const
 
 export type AppConfig = typeof config

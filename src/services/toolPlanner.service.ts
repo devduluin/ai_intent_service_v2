@@ -16,7 +16,7 @@ class ToolPlannerService {
       return this.safeParse(raw)
     } catch (err) {
       console.warn("[Planner] Failed parsing JSON, fallback to chat")
-      return { tools: [], knowledge: [], chat: true }
+      return { handlers: [], tools: [], knowledge: [], chat: true }
     }
   }
 
@@ -28,7 +28,8 @@ class ToolPlannerService {
     // Build detailed tools info
     const toolsDetails = this.buildToolsDetails(input.candidates.toolsDetails || [])
     const knowledgeDetails = this.buildKnowledgeDetails(input.candidates.knowledgeDetails || [])
-    
+    const recentUsage = this.buildRecentUsageHints(input.recentUsage)
+
     return `
 Kamu adalah AI PLANNER profesional.
 
@@ -52,6 +53,11 @@ ${toolsDetails}
 DETAIL KNOWLEDGE YANG TERSEDIA :
 ${knowledgeDetails}
 
+RIWAYAT PENGGUNAAN TOOLS (HINT)
+${recentUsage}
+
+Gunakan riwayat ini sebagai PREFERENSI, 
+tetapi tetap pilih resource yang PALING RELEVAN dengan pesan user.
 
 PESAN USER :
 "${input.userText}"
@@ -87,6 +93,26 @@ Output: {"tools": ["tool_1", "tool_2"], "knowledge": ["knowledege_1", "knowledge
    Deskripsi: ${k.description || 'Tidak ada deskripsi'}
       `.trim()
     }).join('\n\n')
+  }
+
+  private buildRecentUsageHints(recent?: PlannerOutput): string {
+    if (!recent) return "Belum ada riwayat penggunaan tools."
+
+    const parts: string[] = []
+
+    if (recent.tools?.length)
+      parts.push(`User SERING memakai tools: ${recent.tools.join(', ')}`)
+
+    if (recent.knowledge?.length)
+      parts.push(`User SERING mengakses knowledge: ${recent.knowledge.join(', ')}`)
+
+    if (recent.chat)
+      parts.push(`User SERING melakukan percakapan umum (chat)`)
+
+    if (parts.length === 0)
+      return "Belum ada riwayat penggunaan tools."
+
+    return parts.join('\n')
   }
 
   // ===============================

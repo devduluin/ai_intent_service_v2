@@ -1,9 +1,12 @@
 import { Op } from 'sequelize'
 import { KnowledgeModel } from '../database/models'
+import IntentKnowledgeMappingModel from '../database/models/Intent-knowledge-mapping.model'
+import KnowledgeSourceModel from '../database/models/Knowledge-source.model'
+
 import type { Knowledge } from '../types'
 
 class KnowledgeRepository {
-  
+
   // =========================================================
   // BASE QUERY CONFIG
   // =========================================================
@@ -13,18 +16,54 @@ class KnowledgeRepository {
   }
 
   // =========================================================
-  // MAPPER → DB MODEL → DOMAIN OBJECT
+  // MAPPER → DB → DOMAIN
   // =========================================================
-  private mapKnowledge(knowledge: KnowledgeModel): Knowledge {
+  private mapKnowledge(model: KnowledgeModel): Knowledge {
     return {
-      id: knowledge.id,
-      slug: knowledge.slug,
-      title: knowledge.title,
-      description: knowledge.description || '',
-      content: knowledge.content,
-      type: knowledge.type,
-      isActive: knowledge.isActive
+      id: model.id,
+      slug: model.slug,
+      title: model.title,
+      description: model.description || '',
+      content: model.content  || '',
+      type: model.type,
+      isActive: model.isActive,
+      ingestionStatus: model.ingestionStatus
     }
+  }
+
+  // =========================================================
+  // WORKER ENTRY POINT
+  // =========================================================
+  async findById(id: string): Promise<Knowledge | null> {
+    const data = await KnowledgeModel.findByPk(id)
+    if (!data) return null
+    return this.mapKnowledge(data)
+  }
+
+  // =========================================================
+  // INGESTION STATUS UPDATE
+  // =========================================================
+  async updateStatus(
+    id: string,
+    status: 'idle' | 'processing' | 'completed' | 'failed'
+  ): Promise<void> {
+    await KnowledgeModel.update(
+      { ingestionStatus: status },
+      { where: { id } }
+    )
+  }
+
+  // Optional sugar helpers
+  async setProcessing(id: string) {
+    return this.updateStatus(id, 'processing')
+  }
+
+  async setComplete(id: string) {
+    return this.updateStatus(id, 'completed')
+  }
+
+  async setFailed(id: string) {
+    return this.updateStatus(id, 'failed')
   }
 
   // =========================================================
@@ -32,7 +71,6 @@ class KnowledgeRepository {
   // =========================================================
   async findAllActive(): Promise<Knowledge[]> {
     const data = await KnowledgeModel.findAll(this.baseQuery)
-
     return data.map(item => this.mapKnowledge(item))
   }
 
@@ -41,19 +79,15 @@ class KnowledgeRepository {
   // =========================================================
   async findBySlug(slug: string): Promise<Knowledge | null> {
     const data = await KnowledgeModel.findOne({
-      where: {
-        slug,
-        isActive: true
-      }
+      where: { slug, isActive: true }
     })
 
     if (!data) return null
-
     return this.mapKnowledge(data)
   }
 
   // =========================================================
-  // FIND BY MULTIPLE SLUGS (ORDER PRESERVED)
+  // LEGACY FALLBACK (NO VECTOR RESULT)
   // =========================================================
   async findBySlugs(slugs: string[]): Promise<Knowledge[]> {
     if (!slugs.length) return []
@@ -74,18 +108,80 @@ class KnowledgeRepository {
   }
 
   // =========================================================
-  // FIND BY TYPE (FAQ / ARTICLE / POLICY)
+  // FIND BY TYPE
   // =========================================================
   async findByType(type: 'faq' | 'article' | 'policy'): Promise<Knowledge[]> {
     const data = await KnowledgeModel.findAll({
-      where: {
-        type,
-        isActive: true
-      },
+      where: { type, isActive: true },
       order: [['createdAt', 'ASC']]
     })
 
     return data.map(item => this.mapKnowledge(item))
+  }
+
+  // =========================================================
+  // RUNTIME ENTRY POINT (CHAT PIPELINE)
+  // =========================================================
+  async findKnowledgeIdsByIntent(intentId: string): Promise<string[]> {
+    const mappings = await IntentKnowledgeMappingModel.findAll({
+      where: { intentId },
+      attributes: ['knowledgeId']
+    })
+
+    return mappings.map(m => m.knowledgeId)
+  }
+
+  // =========================================================
+  // ADMIN / INGESTION VIEW
+  // =========================================================
+  async findWithSources(slug: string) {
+    return KnowledgeModel.findOne({
+      where: { slug, isActive: true },
+      include: [
+        {
+          model: KnowledgeSourceModel,
+          as: 'sources'
+        }
+      ]
+    })
+  }
+
+  // =========================================================
+  // CREATE KNOWLEDGE (ADMIN)
+  // =========================================================
+  async create(data: {
+    slug: string
+    title: string
+    description: string
+    type: 'faq' | 'article' | 'policy'
+  }): Promise<Knowledge> {
+
+    const created = await KnowledgeModel.create({
+      slug: data.slug,
+      title: data.title,
+      description: data.description,
+      type: data.type,
+      isActive: true,
+      ingestionStatus: 'idle',
+      lastIngestedAt: new Date()
+    })
+
+    return this.mapKnowledge(created)
+  }
+
+  // =========================================================
+  // UPDATE METADATA
+  // =========================================================
+  async update(
+    id: string,
+    data: Partial<{
+      title: string
+      description: string
+      type: 'faq' | 'article' | 'policy'
+      isActive: boolean
+    }>
+  ): Promise<void> {
+    await KnowledgeModel.update(data, { where: { id } })
   }
 
   // =========================================================

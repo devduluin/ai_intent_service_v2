@@ -15,9 +15,12 @@ export class KnowledgeModel extends Model<
   declare slug: string
   declare title: string
   declare description: string | null
-  declare content: string
+  declare content: string | null
   declare type: 'faq' | 'article' | 'policy'
   declare isActive: CreationOptional<boolean>
+
+  declare ingestionStatus: CreationOptional<'idle' | 'processing' | 'completed' | 'failed'>
+  declare lastIngestedAt: CreationOptional<Date | null>
   declare createdAt: CreationOptional<Date>
   declare updatedAt: CreationOptional<Date>
 }
@@ -48,7 +51,7 @@ KnowledgeModel.init(
 
     content: {
       type: DataTypes.TEXT,
-      allowNull: false,
+      allowNull: true,
     },
 
     type: {
@@ -61,6 +64,17 @@ KnowledgeModel.init(
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: true,
+    },
+
+    ingestionStatus: {
+      type: DataTypes.ENUM('idle', 'processing', 'completed', 'failed'),
+      allowNull: false,
+      defaultValue: 'idle',
+    },
+    
+    lastIngestedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
     },
 
     createdAt: {
