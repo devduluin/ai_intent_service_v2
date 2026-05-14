@@ -95,9 +95,9 @@ function checkFirstInteraction(context: any): boolean {
     
     // If last message is from 'assistant', this is NOT first interaction
     // Karena assistant baru saja merespon, berarti sudah ada interaksi sebelumnya
-    if (lastMessage?.role === 'assistant') {
-      return false
-    }
+    // if (lastMessage?.role === 'assistant') {
+    //   return false
+    // }
     
     // If last message is NOT from assistant (user or other role), 
     // this IS first interaction (true)

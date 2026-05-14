@@ -1,7 +1,6 @@
 import { ollamaService } from './ollama.service'
 
 import { vectorService } from './vector.service'
-import { knowledgeVectorService } from './knowledgeVector.service'
 import { intentRegistry } from './intent-registry.service'
 import { paramExtractorService } from './paramExtractor.service'
 import { clarificationService } from './clarification.service'
@@ -16,15 +15,19 @@ import { toolRepository } from '../repositories/tool.repository'
 import { PipelineValidator } from '../utils/pipeline-validator.util'
 import { PipelineFormatter } from '../utils/pipeline-formatter.util'
 import { circuitBreaker } from '../utils/circuit-breaker.util'
+import { ConversationUtil } from '../utils/conversation.util'
 
 import { embeddingCache } from './embedding-cache.service'
 import { paramHydratorService } from './param-hydrator.service'
 import { toolPlannerService } from './toolPlanner.service'
 import { knowledgeHelper } from '../services/knowledge-helper.service'
 import { toolService } from '../services/tools.service'
+import { episodicMemoryService } from '../services/episodic-memory.service'
+import { queryRewriteService } from '../services/query-rewrite.service'
+import { confidenceDecisionService } from '../services/confidence-decision.service'
 
 import { config } from '../config'
-import type { PipelineInput, PipelineResult, ToolMissingParams, PlannerOutput, Intent, Tool, ToolParam, Knowledge, PendingIntentState } from '../types'
+import type { PipelineInput, PipelineResult, ToolMissingParams, PlannerOutput, Intent, IntentMatch, ToolParam, PendingIntentState } from '../types'
 import { AgentResponse } from '../types/agent.types'
 import { executionContext } from '../utils/strategies/execution-context'
 
@@ -72,34 +75,84 @@ class PipelineService {
       return await this.resumePendingIntent(input, pending, agent, startTotal)
     }
 
-    // ============================================================
-    // deteksi intent & matching
-    // ============================================================
+    
     try {
       const intents = intentRegistry.getAll({
         agentId: agent?.id
       })
-
-      console.log("[Intents]:", intents)
-
-      const queryEmbedding = await this.embedQuery(input.text, agent?.id)
       
-      const plannerOutput = await this.matchIntent(queryEmbedding, intents, agent, input)
+      // Embed query dan cari intent
+      const intentQuery = input.text
+      const queryEmbedding = await this.embedQuery(intentQuery, agent?.id)
+      
+      const vectorHints = await vectorService.findIntent(
+        queryEmbedding,
+        intents,
+        agent as AgentResponse
+      )
+
+      // ============================================================
+      // GET EPISODIC MEMORY
+      // ============================================================
+
+      const memoryContext = await episodicMemoryService.getRecentContext(
+        input.user_id,
+        input.app_name
+      )
+
+      const recentTools = await episodicMemoryService.getToolUsageHints(
+        input.user_id,
+        input.app_name
+      )
+
+      console.log('[Memory] Recent tools:', recentTools)
+
+      let enrichedUserQuery = memoryContext + input.text
+
+      const rewrittenQuery = await queryRewriteService.rewriteWithMemory(
+        memoryContext,
+        input.text
+      )
+
+      enrichedUserQuery = memoryContext + rewrittenQuery
+
+      console.log('[User enrichedUserQuery]:', enrichedUserQuery)
+
+      // ============================================================
+      // PLANNER INTENT
+      // ============================================================
+      const plannerOutput = await this.plannerIntent(recentTools, vectorHints,
+        {
+          ...input,
+          text: enrichedUserQuery
+        }, true)
 
       console.log("[Planner Raw]:", plannerOutput)
 
-      
+      // ============================================
+      //  CONFIDENCE DECISION ENGINE
+      // ============================================
+      const decision = confidenceDecisionService.evaluate(
+        plannerOutput,
+        input.text
+      )
 
-      //hasil : [Planner Raw]: { handler: [ 'greeting' ], tools: [], knowledge: [], chat: false }
+      plannerOutput.confidence = decision.confidence
 
-      //handle untuk intent handler
-      // if (plannerOutput.handlers && plannerOutput.handlers.length > 0) {
-      //   console.log("[Planner Handler]:", plannerOutput.handlers)
-      //    const result = await executionContext.run("handler", {handlerKey: plannerOutput.handlers[0]}, {}, input)
-      //    console.log("[Planner Handler Result]:", result)
-      //    // hasil :[Planner Handler Result]: { success: true, message: 'Hello! user_1!' }
-      // }
+      console.log('[Confidence]', decision)
 
+      // LOW CONFIDENCE → (STOP TOOL FLOW)
+      if (decision.action === 'chat') {
+        return await this.handlePureChat(
+          input,
+          memoryContext,
+          startTotal
+        )
+      }
+
+      // ============================================
+      // VALIDATE SAFE PLAN
+      // ============================================
       const safePlan: PlannerOutput = {
         handlers: plannerOutput.handlers,
         tools: plannerOutput.tools,
@@ -107,18 +160,16 @@ class PipelineService {
         chat: plannerOutput.chat && plannerOutput.tools.length === 0 && plannerOutput.knowledge.length === 0
       }
 
-      // Evaluasi planner output
       if (safePlan.chat === true) {
-        const aiResponse = await generalChatService.handle(input);
-        return PipelineFormatter.buildEarly({
-          intent: 'general_chat',
-          score: 1,
-          message: aiResponse
-        }, startTotal);
+        return await this.handlePureChat(
+          input,
+          memoryContext,
+          startTotal
+        )
       }
       
       // ============================================================
-      // PARAM EXTRACTION LANGSUNG DARI SAFEPLAN.TOOLS
+      // PARAM EXTRACTION FOR SAFEPLAN.TOOLS
       // ============================================================
       let safeParams: Record<string, unknown> = {};
       
@@ -171,19 +222,46 @@ class PipelineService {
       }
 
       // ============================================================
-      // EKSEKUSI INTENTS (pakai selectedIntents untuk handler)
+      // EKSEKUSI INTENTS (HANDLERS, TOOLS, KNOWLEDGE)
       // ============================================================
       const apiResults = await this.executeSafePlan(input, safePlan, safeParams)
 
-      // console.log('[Pipeline] API Results:', apiResults)
-     
-      const naturalResponse = await this.naturalize(input, apiResults)
+      console.log('[Pipeline] API Results:', apiResults)
 
+      // ============================================================
+      // NATURALIZE RESPONSE
+      // ============================================================
+      const naturalResponse = await this.naturalize(
+        {
+          ...input,
+          text: enrichedUserQuery
+        }, apiResults)
+      
       const intentLabel = [
+        ...safePlan.handlers,
         ...safePlan.tools,
         ...safePlan.knowledge
       ].join(',')
 
+      // ============================================================
+      // STORE EPISODIC MEMORY
+      // ============================================================
+      const messages = ConversationUtil.buildMessages(input, {
+        memoryContext:naturalResponse
+      })
+
+      const summary = await episodicMemoryService.summarize(
+        input.user_id,
+        input.app_name,
+        messages,
+        safePlan
+      )
+
+      console.log('[Pipeline] Summary:', summary)
+
+      // ============================================================
+      // RETURN RESULT
+      // ============================================================
       return PipelineFormatter.buildSuccessMulti(
         intentLabel,
         1,
@@ -288,7 +366,7 @@ class PipelineService {
     })));
 
     // ✅ IMPORTANT: Gunakan originalPlan yang lengkap (tools + knowledge)
-    const originalPlan = pending.originalPlan || { tools: [], knowledge: [], chat: false };
+    const originalPlan = pending.originalPlan || { handlers: [], tools: [], knowledge: [], chat: false };
     console.log('[Resuming] Original plan:', originalPlan);
 
     // ============================================================
@@ -379,26 +457,34 @@ class PipelineService {
   // ============================================================
   // STAGE 2 — INTENT MATCHING VECTOR AND PLANNER
   // ============================================================
-  private async matchIntent(
-    embedding: number[], 
-    intents: Intent[], 
-    agent: AgentResponse | null, 
+  private async plannerIntent(
+    recentUsage: PlannerOutput,
+    matches: IntentMatch[], 
     input: PipelineInput,
     usePlan: boolean = true
   ): Promise<PlannerOutput> {
 
-    const matches = await vectorService.findIntent(
-      embedding, 
-      intents, 
-      agent as AgentResponse
-    )
+    // console.log('[Pipeline] Intent matches:', matches);
+    const hasMatches = matches && matches.length > 0
+    const hasRecentUsage =
+      recentUsage &&
+      (
+        recentUsage.handlers?.length ||
+        recentUsage.tools?.length ||
+        recentUsage.knowledge?.length
+      )
 
-    console.log('[Pipeline] Intent matches:', matches);
-    // ----------------------------------------------------------
-    // NO MATCH → PURE CHAT
-    // ----------------------------------------------------------
-    if (!matches || matches.length === 0) {
-      return { handlers: [], tools: [], knowledge: [], chat: true }
+    // ==========================================================
+    //  EARLY EXIT — PURE CHAT (NO MATCH + NO MEMORY)
+    // ==========================================================
+    if (!hasMatches && !hasRecentUsage) {
+      console.log('[IntentMatch] No matches & no memory → PURE CHAT')
+      return {
+        handlers: [],
+        tools: [],
+        knowledge: [],
+        chat: true
+      }
     }
 
     const handlerIntents = matches
@@ -538,6 +624,7 @@ class PipelineService {
         toolsDetails: uniqueTools,
         knowledgeDetails: uniqueKnowledge
       },
+      recentUsage,
       language: input.language
     })
 
@@ -583,32 +670,10 @@ class PipelineService {
       chat_history: input.chat_history ?? [],
       attributes: input.attributes,
     }
-    
-    // ============================================================
-    // CASE 1: Pure Chat
-    // ============================================================
-    if (safePlan.chat === true && safePlan.tools.length === 0 && safePlan.knowledge.length === 0) {
-      console.log(`[ExecuteSafePlan] Pure chat mode - using LLM strategy`)
-      
-      try {
-        const result = await executionContext.run(
-          "llm",
-          {},
-          {},
-          context
 
-        )
-        results.chat = result
-      } catch (error) {
-        console.error(`[ExecuteSafePlan] Failed chat:`, error)
-        results.chat = { error: String(error) }
-      }
-      
-      return results
-    }
     
     // ============================================================
-    // CASE 2: Execute Tools from safePlan (with param extraction)
+    // CASE 1: Execute Tools from safePlan (with param extraction)
     // ============================================================
     if (safePlan.tools.length > 0) {
       // Extract params ONLY for tools
@@ -644,7 +709,8 @@ class PipelineService {
         }
       } else {
         // Execute tools with extracted params
-        const toolResults = await this.executeToolsWithContext(allTools, safeParams, context)
+        // const toolResults = await this.executeToolsWithContext(allTools, safeParams, context)
+        const toolResults = await executionContext.run("tool", allTools, safeParams, context)
         
         // Return single value if only one tool
         if (allTools.length === 1) {
@@ -656,7 +722,7 @@ class PipelineService {
     }
     
     // ============================================================
-    // CASE 3: Execute Knowledge from safePlan (NO param extraction needed)
+    // CASE 2: Execute Knowledge from safePlan (NO param extraction needed)
     // ============================================================
     if (safePlan.knowledge.length > 0) {
       // results.llmModel = config.ollama.naturalModel
@@ -666,7 +732,8 @@ class PipelineService {
 
       try {
         // Use knowledge strategy via execution context
-        const knowledgeResult = await this.executeKnowledgesWithContext(allKnowledge, context)
+        // const knowledgeResult = await this.executeKnowledgesWithContext(allKnowledge, context)
+        const knowledgeResult = await executionContext.run("knowledge", allKnowledge, {}, context)
         
         // console.log('[ExecuteSafePlan] Knowledge result:', knowledgeResult)
         // Return single value if only one knowledge
@@ -682,12 +749,13 @@ class PipelineService {
     }
 
     // ============================================================
-    // CASE 4: Execute Handler from safePlan (NO param extraction needed)
+    // CASE 3: Execute Handler from safePlan (NO param extraction needed)
     // ============================================================
     if (safePlan.handlers && safePlan.handlers.length > 0) {
       try {
         // Use handler strategy via execution context
-        const handlerResult = await this.executeHandlerWithContext(safePlan.handlers, context)
+        // const handlerResult = await this.executeHandlerWithContext(safePlan.handlers, context)
+        const handlerResult = await executionContext.run("handler", safePlan.handlers, {}, context)
         
         // console.log('[ExecuteSafePlan] Handler result:', handlerResult)
         // Return single value if only one handler
@@ -706,255 +774,7 @@ class PipelineService {
   }
 
   // ============================================================
-  // HELPER: Execute tools using execution context
-  // ============================================================
-  private async executeToolsWithContext(
-    tools: Tool[],
-    params: Record<string, unknown>,
-    context: any
-  ): Promise<Record<string, unknown>> {
-
-    const toolPromises = tools.map(async (tool) => {
-      try {
-        // Filter params specific to this tool
-        const toolParams = toolService.getToolParams(tool)
-        const toolParamNames = new Set(toolParams.map(p => p.name))
-        
-        const filteredParams: Record<string, unknown> = {}
-        for (const [key, value] of Object.entries(params)) {
-          if (toolParamNames.has(key) && value !== undefined && value !== null) {
-            filteredParams[key] = value
-          }
-        }
-        
-        // Execute tool using execution context
-        const result = await executionContext.run("tool", tool, filteredParams, context)
-        
-        return { slug: tool.slug, status: 'fulfilled' as const, value: result }
-      } catch (error) {
-        console.error(`[ExecuteToolsWithContext] Failed tool ${tool.slug}:`, error)
-        return { slug: tool.slug, status: 'rejected' as const, reason: error }
-      }
-    })
-    
-    const settledTools = await Promise.all(toolPromises)
-    
-    const results: Record<string, unknown> = {}
-    for (const res of settledTools) {
-      if (res.status === 'fulfilled') {
-        results[res.slug] = res.value
-      } else {
-        results[res.slug] = { error: String(res.reason) }
-      }
-    }
-    
-    return results
-  }
-
-  // // ============================================================
-  // // HELPER: Execute knowledge using execution context (RAG-safe)
-  // // ============================================================
-  // private async executeKnowledgesWithContext(
-  //   knowledges: Knowledge[],
-  //   context: any
-  // ): Promise<Record<string, unknown>> {
-  //   console.log(`[ExecuteKnowledgesWithContext] Executing ${knowledges.length} knowledge(s)`)
-
-  //   const knowledgePromises = knowledges.map(async (knowledge) => {
-  //     console.log("[ExecuteKnowledgesWithContext] Executing knowledge:", context.text)
-
-  //     //vector search knowledge chunk
-  //     try {
-  //       const result = knowledge.content
-
-  //       return {
-  //         slug: knowledge.slug,
-  //         status: 'fulfilled' as const,
-  //         value: result,
-  //       }
-
-  //     } catch (error) {
-  //       console.error(
-  //         `[ExecuteKnowledgesWithContext] Failed knowledge ${knowledge.slug}:`,
-  //         error
-  //       )
-
-  //       return {
-  //         slug: knowledge.slug,
-  //         status: 'rejected' as const,
-  //         reason: error,
-  //       }
-  //     }
-  //   })
-
-  //   // =========================================================
-  //   // SAME AS TOOL: Promise.all + settle normalization
-  //   // =========================================================
-  //   const settled = await Promise.all(knowledgePromises)
-
-  //   const results: Record<string, unknown> = {}
-
-  //   for (const res of settled) {
-  //     if (res.status === 'fulfilled') {
-  //       results[res.slug] = res.value
-  //     } else {
-  //       results[res.slug] = {
-  //         error: String(res.reason),
-  //       }
-  //     }
-  //   }
-
-  //   return results
-  // }
-
-  private async executeKnowledgesWithContext(
-    knowledges: Knowledge[],
-    context: any
-  ): Promise<Record<string, unknown>> {
-
-    console.log(
-      `[ExecuteKnowledgesWithContext] Executing ${knowledges.length} knowledge(s)`
-    )
-
-    if (!knowledges.length) return {}
-
-    // 1️⃣ Embed user query once
-    const queryEmbedding = await ollamaService.embed(context.text)
-
-    const knowledgePromises = knowledges.map(async (knowledge) => {
-      console.log(
-        `[ExecuteKnowledgesWithContext] Vector search for: ${knowledge.slug}`
-      )
-
-      try {
-        // 2️⃣ Scoped vector search (planner-approved)
-        const searchResult =
-          await knowledgeVectorService.searchKnowledgeChunks({
-            embedding: queryEmbedding,
-            knowledgeIds: [knowledge.id],
-            topK: 5,
-          })
-
-        // 3️⃣ fallback if not ingested yet
-        if (!searchResult.length) {
-          console.warn(
-            `[ExecuteKnowledgesWithContext] No chunks → fallback raw: ${knowledge.slug}`
-          )
-
-          return {
-            slug: knowledge.slug,
-            status: 'fulfilled' as const,
-            value: {
-              type: 'knowledge',
-              source: knowledge.slug,
-              context: knowledge.content,
-              chunksFound: 0,
-            },
-          }
-        }
-
-        // 4️⃣ Build RAG context
-        const ragContext = searchResult
-          .map(chunk => {
-            const score = chunk.score.toFixed(3)
-            return `[score:${score}] ${chunk.content}`
-          })
-          .join('\n\n---\n\n')
-
-        return {
-          slug: knowledge.slug,
-          status: 'fulfilled' as const,
-          value: {
-            type: 'knowledge',
-            source: knowledge.slug,
-            context: ragContext,
-            chunksFound: searchResult.length,
-          },
-        }
-
-      } catch (error) {
-        console.error(
-          `[ExecuteKnowledgesWithContext] Failed knowledge ${knowledge.slug}:`,
-          error
-        )
-
-        return {
-          slug: knowledge.slug,
-          status: 'rejected' as const,
-          reason: error,
-        }
-      }
-    })
-
-    const settled = await Promise.all(knowledgePromises)
-
-    const results: Record<string, unknown> = {}
-
-    for (const res of settled) {
-      if (res.status === 'fulfilled') {
-        results[res.slug] = res.value
-      } else {
-        results[res.slug] = { error: String(res.reason) }
-      }
-    }
-
-    return results
-  }
-
-  // ============================================================
-  // HELPER: Execute handler using execution context (RAG-safe)
-  // ============================================================
-  private async executeHandlerWithContext(
-    handlers: any[],
-    context: any
-  ): Promise<Record<string, unknown>> {
-    console.log(`[ExecuteHandlersWithContext] Executing ${handlers.length} knowledge(s)`)
-
-    const handlerPromises = handlers.map(async (handler) => {
-      try {
-        const result = await executionContext.run("handler", {handlerKey: handler}, {}, context)
-        return {
-          slug: handler,
-          status: 'fulfilled' as const,
-          value: result,
-        }
-
-      } catch (error) {
-        console.error(
-          `[ExecuteHandlersWithContext] Failed knowledge ${handler.slug}:`,
-          error
-        )
-
-        return {
-          slug: handler,
-          status: 'rejected' as const,
-          reason: error,
-        }
-      }
-    })
-
-    // =========================================================
-    // SAME AS TOOL: Promise.all + settle normalization
-    // =========================================================
-    const settled = await Promise.all(handlerPromises)
-
-    const results: Record<string, unknown> = {}
-
-    for (const res of settled) {
-      if (res.status === 'fulfilled') {
-        results[res.slug] = res.value
-      } else {
-        results[res.slug] = {
-          error: String(res.reason),
-        }
-      }
-    }
-
-    return results
-  }
-
-  // ============================================================
-  // STAGE 5 — NATURALIZATION
+  // STAGE 5 — NATURALIZATION OR PURE CHAT
   // ============================================================
   private async naturalize(input: PipelineInput, apiResult: unknown) {
     return await naturalizationService.naturalize(
@@ -963,6 +783,43 @@ class PipelineService {
       input.attributes?.name as string,
       input.language ?? 'Indonesia'
     )
+  }
+
+  private async handlePureChat(
+    input: PipelineInput,
+    memoryContext: string,
+    startTotal: number
+  ): Promise<PipelineResult> {
+
+    console.log('[Pipeline] Pure Chat Mode Activated')
+
+    const aiResponse = await generalChatService.handle({
+      ...input,
+      text: memoryContext + input.text
+    })
+
+    // Simpan episodic memory juga untuk chat biasa
+    const messages = ConversationUtil.buildMessages(input, {
+      memoryContext: aiResponse
+    })
+
+    await episodicMemoryService.summarize(
+      input.user_id,
+      input.app_name,
+      messages,
+      {
+        handlers: [],
+        tools: [],
+        knowledge: [],
+        chat: true
+      }
+    )
+
+    return PipelineFormatter.buildEarly({
+      intent: 'general_chat',
+      score: 1,
+      message: aiResponse
+    }, startTotal)
   }
 
   // ============================================================
@@ -992,6 +849,7 @@ class PipelineService {
       maxRetry: 3,
       isMultiIntent: intents.length > 1,
       originalPlan: { 
+        handlers: originalPlan.handlers,
         tools: originalPlan.tools,      // ← tools tetap
         knowledge: originalPlan.knowledge,  // ← knowledge juga disimpan!
         chat: originalPlan.chat 

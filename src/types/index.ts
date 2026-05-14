@@ -112,14 +112,19 @@ export interface PlannerInput {
     toolsDetails?: any[]      // full intent objects for tools
     knowledgeDetails?: any[]  // full intent objects for knowledge
   }
+  recentUsage?: PlannerOutput
   language?: string
 }
 
 export interface PlannerOutput {
-  handlers?: string[];
+  handlers: string[];
   tools: string[];
   knowledge: string[];
   chat: boolean;
+  
+  confidence?: number
+  shouldClarify?: boolean
+  reasoning?: string
 }
 
 // ============================================================
@@ -127,7 +132,7 @@ export interface PlannerOutput {
 // ============================================================
 
 export type ChatMessage = {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   content: string
 }
 
@@ -281,4 +286,13 @@ export type bodyKnowledgeSource = {
   content?: string | null
   url?: string | null
   filePath?: string | null
+}
+
+export type EpisodicMemory = {
+  id: string
+  user_id: string
+  app_name: string
+  summary: string
+  intentsSeen: string[]
+  created_at: Date
 }
