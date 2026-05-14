@@ -23,7 +23,8 @@ class OllamaService {
   // =============================
   async embed(text: string): Promise<number[]> {
     console.log('Embedding text:', text)
-    const res = await this.post(config.ollama.baseUrl+'/embeddings', {
+    //add env raw if error
+    const res = await this.post(config.ollama.baseUrlRaw+'/embeddings', {
       model: config.ollama.embedModel,
       prompt: text,
     })
@@ -41,7 +42,7 @@ class OllamaService {
   // CHAT VIA API GATEWAY
   // =============================
   async chat(messages: any[]): Promise<string> {
-    const res = await this.post(config.ollama.baseUrl+'/chat', {
+    const res = await this.post(config.ollama.baseUrlRaw+'/chat', {
       model: config.ollama.llmModel,
       messages,
       stream: false,

@@ -28,6 +28,7 @@ export const config = {
 
   ollama: {
     baseUrl:    process.env.OLLAMA_BASE_URL    ?? 'http://localhost:11434',
+    baseUrlRaw:    process.env.OLLAMA_BASE_URL_RAW    ?? 'http://localhost:11434',
     embedModel: process.env.OLLAMA_EMBED_MODEL ?? 'nomic-embed-text',
     llmModel:   process.env.OLLAMA_LLM_MODEL   ?? 'qwen2.5:1.5b',
     naturalModel: process.env.OLLAMA_NATURAL_MODEL ?? 'qwen2.5:1.5b',

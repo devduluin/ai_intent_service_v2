@@ -187,6 +187,7 @@ export interface EmbedResponse {
 
 export interface OllamaConfig {
   baseUrl: string
+  baseUrlRaw: string
   embedModel: string
   llmModel: string
   naturalModel?: string
