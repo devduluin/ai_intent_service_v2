@@ -20,7 +20,7 @@ module.exports = {
         agentId: hrisAgentId,
         slug: 'greeting',
         name: 'Greeting',
-        description: 'Sapaan dan perkenalan bot',
+        description: 'Sapaan dan perkenalan AI',
         executionType: 'handler',
         handlerKey: 'handleGreeting',
         isActive: true,

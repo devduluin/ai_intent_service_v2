@@ -210,9 +210,9 @@ function generateGreeting(options: {
   // Add skills count info for first interaction
   if (isFirstInteraction && skillsCount > 0) {
     if (language === 'id') {
-      response += ` Saya memiliki ${skillsCount} kemampuan yang bisa membantu pekerjaan Anda.`
+      response += ` Saya memiliki kemampuan yang bisa membantu pekerjaan Anda.`
     } else {
-      response += ` I have ${skillsCount} skills that can help with your work.`
+      response += ` I have skills that can help with your work.`
     }
   }
   

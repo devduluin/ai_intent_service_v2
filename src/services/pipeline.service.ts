@@ -502,7 +502,17 @@ class PipelineService {
      // ----------------------------------------------------------
     // BUILD HANDLER CANDIDATES
     // ----------------------------------------------------------
-    const handlerForPrompt = handlerIntents
+    // const handlerForPrompt = handlerIntents
+    const handlerForPrompt = handlerIntents.flatMap(intent => {
+        return {
+          slug: intent.handlerKey ?? '',
+          name: intent.name,
+          description: intent.description,
+          intentSlug: intent.slug,
+          intentName: intent.name,
+          handlerKey: intent.handlerKey
+        }
+    })
 
     // ----------------------------------------------------------
     // BUILD TOOL CANDIDATES
@@ -515,7 +525,8 @@ class PipelineService {
           name: toolData.name,
           description: toolData.description,
           intentSlug: intent.slug,
-          intentName: intent.name
+          intentName: intent.name,
+          handlerKey: intent.handlerKey
         }
       })
     })
@@ -534,7 +545,8 @@ class PipelineService {
             knowledgeData.title ||
             knowledgeData.slug,
           intentSlug: intent.slug,
-          intentName: intent.name
+          intentName: intent.name,
+          handlerKey: intent.handlerKey
         }
       })
     })
@@ -552,6 +564,7 @@ class PipelineService {
     ]
 
     console.log('[IntentMatch] Candidates:', {
+      handlers: uniqueHandler.map(h => h.slug),
       tools: uniqueTools.map(t => t.slug),
       knowledge: uniqueKnowledge.map(k => k.slug)
     })
