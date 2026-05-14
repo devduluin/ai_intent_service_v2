@@ -24,7 +24,7 @@ class EpisodicMemoryService {
   private storeDb: EpisodicMemory[] = []
   private lastMenuDb: MenuMemory[] = []
 
-  private MAX_SLOTS_PER_USER = 2
+  private MAX_SLOTS_PER_USER = 1
 
   // ============================================================
   // 1️⃣ SAVE MENU (AI show numbered menu)
