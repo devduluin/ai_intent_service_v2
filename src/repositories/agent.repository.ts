@@ -22,7 +22,7 @@ export class AgentRepository {
       slug: data.slug,
       systemPrompt: data.systemPrompt,
       customPrompt: data.customPrompt,
-      llmModelId: data.llmModelId,
+      modelId: data.modelId,
       temperature: data.temperature || 0.7,
       maxTokens: data.maxTokens,
       memoryEnabled: data.memoryEnabled,
@@ -201,7 +201,7 @@ export class AgentRepository {
       metadata: agent.metadata,
 
       // 🧠 NEW FIELDS (LLM RELATION)
-      llmModelId: agent.llmModelId,
+      modelId: agent.modelId,
       llmModel: agent.llmModel
         ? {
             id: agent.llmModel.id,

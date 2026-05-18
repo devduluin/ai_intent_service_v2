@@ -15,7 +15,7 @@ export interface Agent {
   customPrompt: string | null
 
   // ⚙️ LLM CONFIG
-  llmModelId: string | null
+  modelId: string | null
   llmModel?: ILlmModel | null
 
   temperature: number
@@ -41,7 +41,7 @@ export interface AgentCreateInput {
   customPrompt?: string | null
 
   // ⚙️ LLM
-  llmModelId?: string | null
+  modelId?: string | null
   temperature?: number
   maxTokens?: number | null
   memoryEnabled?: boolean

@@ -119,7 +119,7 @@ export class IntentRepository {
             systemPrompt: row.agent.systemPrompt ?? null,
             customPrompt: row.agent.customPrompt ?? null,
 
-            llmModelId: row.agent.llmModelId ?? null,
+            modelId: row.agent.modelId ?? null,
 
             temperature: row.agent.temperature ?? 0.7,
             maxTokens: row.agent.maxTokens ?? null,
