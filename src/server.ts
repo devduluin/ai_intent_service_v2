@@ -36,11 +36,11 @@ async function start() {
     app.log.info('Connecting to ChromaDB...')
     await vectorService.init()
     await knowledgeVectorService.init()
-    // await vectorService.resetCollection()
+    await vectorService.resetCollection()
 
     // 5. Index intent dari DB ke vector DB
     app.log.info('Indexing intents into vector DB...')
-    // await vectorService.indexAllIntents(dbIntents)
+    await vectorService.indexAllIntents(dbIntents)
 
     // 6. Override registry dengan data dari DB
     // (supaya examples dari DB yang dipakai, bukan dari file)
