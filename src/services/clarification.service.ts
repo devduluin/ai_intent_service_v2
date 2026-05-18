@@ -1,6 +1,7 @@
 import { ollamaService } from './ollama.service'
 import { openAiService } from './openAi.service'
 import type { Intent, Tool, ToolParam, PipelineInput } from '../types'
+import type { Agent } from '../types/agent.types'
 import { config } from '../config'
 
 class ClarificationService {
@@ -8,12 +9,12 @@ class ClarificationService {
   // =========================================================
   // PRIVATE helper → call small LLM
   // =========================================================
-  private async generate(prompt: string, options?: { num_predict?: number }) {
+  private async generate(llmModel: string, prompt: string, options?: { num_predict?: number }) {
     // Pilih service berdasarkan config.default.provider
     const provider = config.default?.provider || 'ollama'
 
-    if (provider === 'openai') {
-      const response = await openAiService.chat(prompt, 
+    if (provider === 'qwen') {
+      const response = await openAiService.chat(llmModel, prompt, 
         config.alibaba?.llmModel || "qwen3-8b",
         {
           temperature: 0.4,
@@ -37,6 +38,8 @@ class ClarificationService {
   // 1️ Ask for single parameter from a TOOL
   // =========================================================
   async askForParameterFromTool(
+    provider: string,
+    llmModel: string,
     input: PipelineInput,
     tool: Tool,
     paramName: string,
@@ -63,13 +66,14 @@ Aturan Ketat:
 2. Beri sapaan hanya jika ada nama pengguna.
     `.trim()
 
-    return this.generate(prompt)
+    return this.generate(llmModel, prompt)
   }
 
   // =========================================================
   // 2️ Ask for multiple parameters from MULTIPLE TOOLS
   // =========================================================
   async askForMultipleParametersFromTools(
+    agent: Agent,
     input: PipelineInput,
     missingToolsParams: Array<{ tool: Tool; missing: string[] }>,
     language = 'Indonesia'
@@ -77,6 +81,10 @@ Aturan Ketat:
     // Flatten dan deduplicate semua missing params
     const allMissing = missingToolsParams.flatMap(m => m.missing)
     const uniqueMissing = [...new Set(allMissing)]
+
+     const provider = agent.llmModel?.provider || config.default?.provider || 'ollama'
+
+    const llmModel = agent.llmModel?.modelCode || config.ollama?.llmModel
     
     // Case 1: Hanya 1 parameter yang missing dari 1 tool
     if (uniqueMissing.length === 1 && missingToolsParams.length === 1) {
@@ -84,7 +92,7 @@ Aturan Ketat:
       const paramName = uniqueMissing[0]
       const paramDef = tool.parameters?.find(p => p.name === paramName)
       
-      return this.askForParameterFromTool(input, tool, paramName, paramDef, language)
+      return this.askForParameterFromTool(provider, llmModel, input, tool, paramName, paramDef, language)
     }
     
     // Case 2: Multiple parameters dari multiple tools
@@ -110,31 +118,31 @@ Rules:
 - Sapa jika ada nama pengguna dan Langsung ke poin
     `.trim()
     
-    return this.generate(prompt, { num_predict: 100 })
+    return this.generate(llmModel, prompt, { num_predict: 100 })
   }
 
   // =========================================================
   // 3 Ambiguous intent clarification
   // =========================================================
-  async askForAmbiguousIntent(
-    userText: string,
-    matches: Array<{ intent: Intent; score: number }>,
-    language = 'Indonesia'
-  ): Promise<string> {
-    const options = matches.slice(0, 3).map((m, i) => `${i + 1}. ${m.intent.name}`).join('\n')
+//   async askForAmbiguousIntent(
+//     userText: string,
+//     matches: Array<{ intent: Intent; score: number }>,
+//     language = 'Indonesia'
+//   ): Promise<string> {
+//     const options = matches.slice(0, 3).map((m, i) => `${i + 1}. ${m.intent.name}`).join('\n')
     
-    const prompt = `
-User bertanya: "${userText}"
+//     const prompt = `
+// User bertanya: "${userText}"
 
-Intent yang terdeteksi:
-${options}
+// Intent yang terdeteksi:
+// ${options}
 
-Buat pertanyaan klarifikasi singkat dalam bahasa ${language} untuk memilih intent mana yang dimaksud user.
-Maksimal 1 kalimat.
-    `.trim()
+// Buat pertanyaan klarifikasi singkat dalam bahasa ${language} untuk memilih intent mana yang dimaksud user.
+// Maksimal 1 kalimat.
+//     `.trim()
     
-    return this.generate(prompt, { num_predict: 80 })
-  }
+//     return this.generate(prompt, { num_predict: 80 })
+//   }
 
   // =========================================================
   // 7️⃣ Hard fallback jika tidak ada intent cocok

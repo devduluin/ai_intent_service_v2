@@ -110,6 +110,7 @@ class PipelineService {
       let enrichedUserQuery = memoryContext + input.text
 
       const rewrittenQuery = await queryRewriteService.rewriteWithMemory(
+        agent as Agent,
         memoryContext,
         input.text
       )
@@ -213,6 +214,7 @@ class PipelineService {
           )
           
           return this.handleMissingParametersForTools(
+            agent as Agent,
             input,
             relevantIntents.length > 0 ? relevantIntents : intents,
             missingToolsParams,
@@ -399,6 +401,7 @@ class PipelineService {
       
       // Lanjutkan slot filling
       return this.handleMissingParametersForTools(
+        agent as Agent,
         input,
         intents,
         stillMissing,
@@ -834,6 +837,7 @@ class PipelineService {
   // UTILS — HANDLE MISSING PARAMETERS PER TOOL (UNIFIED)
   // ============================================================
   private async handleMissingParametersForTools(
+    agent: Agent,
     input: PipelineInput,
     intents: Intent[],
     missingToolsParams: ToolMissingParams[],
@@ -870,6 +874,7 @@ class PipelineService {
     })))
 
     const question = await clarificationService.askForMultipleParametersFromTools(
+      agent as Agent,
       input,
       missingToolsParams,
       input.language ?? 'Indonesia'
