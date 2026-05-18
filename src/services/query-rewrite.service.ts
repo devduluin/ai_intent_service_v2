@@ -1,7 +1,7 @@
 import { openAiService } from './openAi.service'
 import { Agent } from '../types/agent.types'
 import { config } from '../config'
-
+import { formatDateHumanID } from '../utils/dateHumanID'
 class QueryRewriteService {
 
   async rewriteWithMemory(
@@ -11,7 +11,9 @@ class QueryRewriteService {
   ): Promise<string> {
 
     // kalau message sudah panjang → skip rewrite
-    if (userMessage.length > 25) return userMessage
+    if (userMessage.length > 15) return userMessage
+
+    const today = formatDateHumanID();
 
     const provider = agent.llmModel?.provider || config.default?.provider || 'ollama'
     const llmModel = agent.llmModel?.modelCode || config.ollama?.llmModel
@@ -28,7 +30,10 @@ User message terbaru:
 Tugas:
 Ubah menjadi pertanyaan lengkap yang berdiri sendiri.
 Jika sudah jelas → kembalikan apa adanya.
-Jawab hanya kalimat hasil rewrite.
+Jawab hanya 1 kalimat hasil rewrite.
+
+Referensi waktu sekarang:
+Hari ini: ${today}
 `
 
     try {
