@@ -128,7 +128,7 @@ export class KnowledgeExecutionStrategy implements ExecutionStrategy {
 
     for (const res of settled) {
       if (res.status === 'fulfilled') {
-        results[res.slug] = res.value
+        results[res.slug] = res.value.context
       } else {
         results[res.slug] = { error: String(res.reason) }
       }

@@ -9,6 +9,8 @@ export const config = {
   default: {
     provider: process.env.DEFAULT_PROVIDER || 'ollama', // atau 'openai'
     numPredict: parseInt(process.env.DEFAULT_NUM_PREDICTIONS ?? '256'),
+    temperature: parseFloat(process.env.DEFAULT_TEMPERATURE ?? '0.6'),
+    systemPrompt: process.env.DEFAULT_SYSTEM_PROMPT ?? 'Kamu adalah asisten profesional milik pengguna',
   },
   
   server: {

@@ -2,12 +2,13 @@
 import { Op } from 'sequelize'
 import {
   AgentModel,
+  llmModel as LlmModel
 } from '../database/models'
 import type { 
-  CreateAgentDTO, 
-  UpdateAgentDTO, 
+  AgentCreateInput, 
+  AgentUpdateInput, 
   AgentFilters,
-  AgentResponse 
+  Agent
 } from '../types/agent.types'
 
 export class AgentRepository {
@@ -15,10 +16,16 @@ export class AgentRepository {
   /**
    * Create new agent
    */
-  async create(data: CreateAgentDTO): Promise<AgentResponse> {
+  async create(data: AgentCreateInput): Promise<Agent> {
     const agent = await AgentModel.create({
       name: data.name,
       slug: data.slug,
+      systemPrompt: data.systemPrompt,
+      customPrompt: data.customPrompt,
+      llmModelId: data.llmModelId,
+      temperature: data.temperature || 0.7,
+      maxTokens: data.maxTokens,
+      memoryEnabled: data.memoryEnabled,
       description: data.description || null,
       isActive: data.isActive ?? true,
       metadata: data.metadata || null,
@@ -30,31 +37,48 @@ export class AgentRepository {
   /**
    * Find agent by ID
    */
-  async findById(id: string): Promise<AgentResponse | null> {
-    const agent = await AgentModel.findByPk(id)
+  async findById(id: string): Promise<Agent | null> {
+    const agent = await AgentModel.findByPk(id, {
+      include: [
+        {
+          model: LlmModel,
+          as: 'llmModel',
+          required: false,
+        },
+      ],
+    })
+
     return agent ? this.toResponse(agent) : null
   }
   
   /**
    * Find agent by slug
    */
-  async findBySlug(slug: string): Promise<AgentResponse | null> {
+  async findBySlug(slug: string): Promise<Agent | null> {
     const agent = await AgentModel.findOne({
-      where: { slug }
+      where: { slug },
+      include: [
+        {
+          model: LlmModel,
+          as: 'llmModel',
+          required: false,
+        },
+      ],
     })
+
     return agent ? this.toResponse(agent) : null
   }
   
   /**
    * Find all agents with filters
    */
-  async findAll(filters?: AgentFilters): Promise<AgentResponse[]> {
+  async findAll(filters?: AgentFilters): Promise<Agent[]> {
     const where: any = {}
-    
+
     if (filters?.isActive !== undefined) {
       where.isActive = filters.isActive
     }
-    
+
     if (filters?.search) {
       where[Op.or] = [
         { name: { [Op.iLike]: `%${filters.search}%` } },
@@ -62,21 +86,28 @@ export class AgentRepository {
         { description: { [Op.iLike]: `%${filters.search}%` } },
       ]
     }
-    
+
     const agents = await AgentModel.findAll({
       where,
+      include: [
+        {
+          model: LlmModel,
+          as: 'llmModel',
+          required: false,
+        },
+      ],
       order: [['createdAt', 'DESC']],
       ...(filters?.limit && { limit: filters.limit }),
       ...(filters?.offset && { offset: filters.offset }),
     })
-    
-    return agents.map(agent => this.toResponse(agent))
+
+    return agents.map((agent) => this.toResponse(agent))
   }
   
   /**
    * Update agent
    */
-  async update(id: string, data: UpdateAgentDTO): Promise<AgentResponse | null> {
+  async update(id: string, data: AgentUpdateInput): Promise<Agent | null> {
     const agent = await AgentModel.findByPk(id)
     
     if (!agent) {
@@ -153,14 +184,34 @@ export class AgentRepository {
   /**
    * Convert model to response DTO
    */
-  private toResponse(agent: AgentModel): AgentResponse {
+  private toResponse(agent: AgentModel): Agent {
     return {
       id: agent.id,
       name: agent.name,
       slug: agent.slug,
       description: agent.description,
       isActive: agent.isActive,
+
+      systemPrompt: agent.systemPrompt ?? null,
+      customPrompt: agent.customPrompt ?? null,
+      temperature: agent.temperature,
+      maxTokens: agent.maxTokens,
+      memoryEnabled: agent.memoryEnabled,
+
       metadata: agent.metadata,
+
+      // 🧠 NEW FIELDS (LLM RELATION)
+      llmModelId: agent.llmModelId,
+      llmModel: agent.llmModel
+        ? {
+            id: agent.llmModel.id,
+            name: agent.llmModel.name,
+            provider: agent.llmModel.provider,
+            modelCode: agent.llmModel.modelCode,
+            isActive: agent.llmModel.isActive
+          }
+        : null,
+
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
     }

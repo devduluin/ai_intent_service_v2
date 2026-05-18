@@ -2,7 +2,7 @@
 import { openAiService } from './openAi.service'
 import { ollamaService } from './ollama.service'
 import { config } from '../config'
-import type { PipelineInput } from '../types'
+import type { Agent } from '../types/agent.types'
 
 // ============================================================
 // Naturalization Service — Mengubah API result menjadi natural language
@@ -20,28 +20,36 @@ class NaturalizationService {
    * @returns Human readable response
    */
   async naturalize(
+    agent: Agent,
     apiResult: unknown,
     originalQuery: string,
     userName: string,
     language: string = 'Indonesia',
-    llmModel?: string
   ): Promise<string> {
     const start = Date.now()
     
+    console.log(`[Naturalization] Agent: ${agent.llmModel?.modelCode}`)
     // Pilih service berdasarkan config.default.provider
-    const provider = config.default?.provider || 'ollama'
+    const provider = agent.llmModel?.provider || config.default?.provider || 'ollama'
+
+    const llmModel = agent.llmModel?.modelCode || config.ollama?.llmModel
+
+    const temperature = agent.llmModel?.temperature || config.default?.temperature
+
+    const systemPrompt = agent.systemPrompt || config.default?.systemPrompt
     
     let result: string
     
-    if (provider === 'openai') {
+    if (provider === 'qwen') {
       result = await openAiService.naturalize(
         apiResult,
         originalQuery,
         userName,
         language,
-        llmModel || config.alibaba?.naturalModel,
+        systemPrompt,
+        llmModel,
         {
-          temperature: 0.6,
+          temperature: temperature || 0.6,
           num_predict: config.default?.numPredict,
         }
       )
@@ -51,7 +59,7 @@ class NaturalizationService {
         originalQuery,
         userName,
         language,
-        llmModel || config.ollama?.llmModel,
+        llmModel,
         {
           temperature: 0.6,
           num_predict: config.default?.numPredict,

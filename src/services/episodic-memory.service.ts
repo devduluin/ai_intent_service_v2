@@ -1,5 +1,6 @@
 import { openAiService } from './openAi.service'
 import { PlannerOutput, ChatMessage } from '../types'
+import { trimChatHistory } from '../utils/trim-chat'
 
 type EpisodicMemory = {
   id: string
@@ -7,7 +8,7 @@ type EpisodicMemory = {
   app_name: string
   memory_key: string        // ⭐ slot key
   summary: string
-  planSeen: PlannerOutput
+  planSeen?: PlannerOutput
   created_at: Date
 }
 
@@ -72,7 +73,7 @@ class EpisodicMemoryService {
   // ============================================================
   private async classifyMemoryKey(
     summary: string,
-    planSeen: PlannerOutput
+    planSeen?: PlannerOutput
   ): Promise<string> {
 
     // ⭐ jika pakai tool → slot by tool
@@ -113,7 +114,7 @@ Jawab hanya nama kategori.
     userId: string,
     app: string,
     summary: string,
-    planSeen: PlannerOutput
+    planSeen?: PlannerOutput
   ) {
     const memoryKey = await this.classifyMemoryKey(summary, planSeen)
 
@@ -171,19 +172,22 @@ Jawab hanya nama kategori.
     userId: string,
     app: string,
     chatHistory: ChatMessage[],
-    planSeen: PlannerOutput
+    planSeen?: PlannerOutput
   ): Promise<string | null> {
 
     if (!chatHistory || chatHistory.length < 2) return null
 
     console.log('[Memory] Summarizing conversation...')
-
-    const conversationText = chatHistory
+    const trimmedHistory = trimChatHistory(chatHistory, {
+      maxMessages: 10,
+      maxLength: 200
+    })
+    const conversationText = trimmedHistory
       .map(m => `${m.role}: ${m.content}`)
       .join('\n')
 
     const prompt = `
-Kamu adalah AI memory.
+ROLE: AI Memory.
 
 Ringkas percakapan berikut menjadi 1 kalimat.
 Fokus:
@@ -191,9 +195,7 @@ Fokus:
 - info penting user
 - tool yang digunakan
 
-Jawab Bahasa Indonesia.
-
-Conversation:
+Percakapan:
 ${conversationText}
 `
 
@@ -232,7 +234,7 @@ ${conversationText}
     console.log('[Memory] Injecting slots:', memories.length)
 
     return `
-Context dari percakapan sebelumnya:
+Context percakapan sebelumnya:
 ${joined}
 
 Pesan saat ini:

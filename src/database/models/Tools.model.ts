@@ -21,6 +21,12 @@ export default class ToolModel extends Model<
   declare authConfig: JSON | null
   declare headers: object | null
   declare bodyTemplate: object | null
+
+  declare responseMapping: Record<string, any> | null
+
+  // 🧠 IMPORTANT FIX
+  declare allowedAgentDelegates: string[] | null
+
   declare isActive: CreationOptional<boolean>
   declare createdAt: CreationOptional<Date>
   declare updatedAt: CreationOptional<Date>
@@ -71,6 +77,16 @@ ToolModel.init(
       type: DataTypes.JSON,
       allowNull: true,
     },
+    responseMapping: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    
+    allowedAgentDelegates: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      allowNull: true,
+    },
+
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,

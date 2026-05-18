@@ -99,7 +99,7 @@ module.exports = {
       {
         name: 'Get Shift API',
         slug: 'get_shift',
-        description: 'Gunakan API ini untuk mendapatkan informasi shift',
+        description: 'Gunakan API ini untuk mendapatkan informasi jadwal atau shift',
         method: 'GET',
         url: `${attendanceBaseUrl}/ai/attendance/get-shift?employee_id={employee_id}`,
         authType: 'none',
@@ -115,6 +115,9 @@ module.exports = {
         bodyTemplate: null,
 
         isActive: true,
+
+        allowedAgentDelegates: ['analyst'],
+        
         createdAt: now,
         updatedAt: now,
       },

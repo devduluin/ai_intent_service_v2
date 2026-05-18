@@ -10,6 +10,7 @@ import KnowledgeSourceModel from './Knowledge-source.model'
 import KnowledgeChunkModel from './Knowledge-chunk.model'
 import { setupAssociations } from './associations'
 import AgentModel from './agent.model'
+import llmModel from './llmModel.model'
 
 // Panggil sekali saja
 setupAssociations()
@@ -27,6 +28,7 @@ export {
   IntentKnowledgeMappingModel,
   KnowledgeModel,
   AgentModel,
+  llmModel,
   KnowledgeSourceModel,
   KnowledgeChunkModel
 }
@@ -41,6 +43,7 @@ export default {
   IntentKnowledgeMappingModel,
   KnowledgeModel,
   AgentModel,
+  llmModel,
   KnowledgeSourceModel,
   KnowledgeChunkModel
 }

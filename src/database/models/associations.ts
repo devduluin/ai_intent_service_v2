@@ -5,12 +5,28 @@ import ToolModel from './Tools.model'
 import KnowledgeModel from './knowledge.model'
 import IntentToolMappingModel from './Intent-tool-mapping.model'
 import IntentKnowledgeMappingModel from './Intent-knowledge-mapping.model'
+
+import LlmModel from './llmModel.model'
 import AgentModel from './agent.model'
 
 import KnowledgeSourceModel from './Knowledge-source.model'
 import KnowledgeChunkModel from './Knowledge-chunk.model';
 
 export function setupAssociations() {
+
+  // =========================
+  // AGENT → LLM MODEL
+  // =========================
+  AgentModel.belongsTo(LlmModel, {
+    foreignKey: 'modelId',
+    as: 'llmModel',
+  })
+
+  LlmModel.hasMany(AgentModel, {
+    foreignKey: 'modelId',
+    as: 'agents',
+  })
+
   // =========================
   // AGENT → INTENT
   // =========================

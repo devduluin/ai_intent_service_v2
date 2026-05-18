@@ -1,8 +1,9 @@
 import { ollamaService, ChatMessage } from './ollama.service'
 import { openAiService } from './openAi.service'
 import type { PipelineInput } from '../types'
+import { Agent } from '../types/agent.types'
 import { config } from '../config'
-
+import { trimChatHistory } from '../utils/trim-chat'
 // ============================================================
 // TYPES
 // ============================================================
@@ -21,20 +22,26 @@ class GeneralChatService {
 
   async handle(
     input: PipelineInput,
+    agent: Agent,
     context?: KnowledgeContext | KnowledgeContext[],
-    temperature: number = 0.6,
-    numPredict: number = 512
+    numPredict: number = 256
   ): Promise<string> {
 
-    try {
-      const messages = this.buildMessages(input, context)
-      console.log('[GeneralChat] Messages:', messages)
-      // Pilih service berdasarkan config.default.provider
-      const provider = config.default?.provider || 'ollama'
+    const provider = agent.llmModel?.provider || config.default?.provider || 'ollama'
 
-      if (provider === 'openai') {
+    const llmModel = agent.llmModel?.modelCode || config.ollama?.llmModel
+
+    const temperature = agent.llmModel?.temperature || config.default?.temperature
+
+    const systemPrompt = agent.systemPrompt || config.default?.systemPrompt
+
+    try {
+      const messages = this.buildMessages(input, systemPrompt)
+      console.log('[GeneralChat] Messages:', messages)
+
+      if (provider === 'qwen') {
         return await openAiService.chatMessage(messages, 
-          config.alibaba?.naturalModel || config.alibaba?.llmModel,
+          llmModel,
           {
             temperature: temperature,
             num_predict: numPredict,
@@ -61,13 +68,13 @@ class GeneralChatService {
   // =========================================================
   private buildMessages(
     input: PipelineInput,
-    context?: KnowledgeContext | KnowledgeContext[]
+    systemPrompt?: string
   ): ChatMessage[] {
 
     const messages: ChatMessage[] = []
 
     // 1 KNOWLEDGE RAG → SYSTEM (GROUND TRUTH)
-    const knowledge = this.formatKnowledgeContext(context)
+    const knowledge = this.formatKnowledgeContext(systemPrompt)
     if (knowledge) {
       messages.push({
         role: 'system',
@@ -75,15 +82,14 @@ class GeneralChatService {
       })
     }
 
-    // 2 ASSISTANT ANCHOR (VERY IMPORTANT)
-    messages.push({
-      role: 'assistant',
-      content: 'Baik, saya siap membantu.',
+    // 2 CHAT HISTORY (role asli)
+    const trimmedHistory = trimChatHistory(input.chat_history, {
+      maxMessages: 10,
+      maxLength: 256
     })
 
-    // 3 CHAT HISTORY (role asli)
-    if (input.chat_history?.length) {
-      input.chat_history.forEach((h: any) => {
+    if (trimmedHistory?.length) {
+      trimmedHistory.forEach((h: any) => {
         messages.push({
           role: h.role === 'user' ? 'user' : 'assistant',
           content: h.content,
@@ -105,10 +111,10 @@ class GeneralChatService {
   // KNOWLEDGE CONTEXT → SYSTEM MESSAGE
   // =========================================================
   private formatKnowledgeContext(
-    context?: KnowledgeContext | KnowledgeContext[]
+    systemPrompt?: string
   ): string {
 
-    // if (!context) return ''
+     if (systemPrompt) return systemPrompt;
 
     // const items = Array.isArray(context) ? context : [context]
     // if (!items.length) return ''
@@ -118,11 +124,10 @@ KAMU ADALAH CITRA, AI ASSISTANT DARI DULUIN BERBASIS KNOWLEDGE INTERNAL.
 
 ATURAN PRIORITAS (WAJIB DIIKUTI):
 1. Gunakan KNOWLEDGE INTERNAL sebagai sumber kebenaran utama.
-2. Jika KNOWLEDGE tersedia → WAJIB digunakan dalam jawaban.
-3. Jika CHAT HISTORY bertentangan dengan KNOWLEDGE → ABAIKAN CHAT HISTORY.
-4. Jika KNOWLEDGE tidak relevan → baru gunakan pengetahuan umum.
-5. DILARANG menebak jika informasi tidak tersedia.
-6. Jika informasi tidak ada → katakan tidak tahu.
+2. Jika CHAT HISTORY bertentangan dengan KNOWLEDGE → ABAIKAN CHAT HISTORY.
+3. Jika KNOWLEDGE tidak relevan → baru gunakan pengetahuan umum.
+4. DILARANG menebak jika informasi tidak tersedia.
+5. Jika informasi tidak ada → katakan tidak tahu.
 
 **Tentang Duluin**
 - Perusahaan teknologi di Bandung, Indonesia
@@ -130,27 +135,13 @@ ATURAN PRIORITAS (WAJIB DIIKUTI):
 - Fokus pada solusi digital untuk bisnis UKM dan korporat
 
 1 **Workin (HRMS)**
-- Mengelola absensi & kehadiran online, manajemen cuti & izin.
+- Mengelola absensi & kehadiran online, manajemen cuti & izin, klaim reimbursement.
 - Face recognition untuk offline mode.
 - Checkpoint & persetujuan berlapis.
 - Dokumen manajemen, shift & lembur.
 - Tombol darurat tarik gaji harian.
 - Atur shift & pengumuman mobile, berita internal.
-- Dashboard HR user-friendly, bisa dikustomisasi sesuai kebutuhan usaha.
-- Payroll terintegrasi dengan **Duluin Gajian**.
 
-2 **Duluin Gajian (EWA / Payroll)**
-- Layanan gaji harian fleksibel, tarik saldo kapan saja.
-- Proses pembayaran aman & cepat.
-- Integrasi penuh dengan Workin.
-- Memberikan info gaji, slip, dan tunjangan dengan nada profesional.
-- Tidak memberikan saran hukum atau medis.
-
-3 **Satu Creative**
-- Divisi creative & branding: desain grafis, konten digital, copywriting, branding, strategi kreatif.
-- Juga menyediakan pengembangan aplikasi: mobile apps, website company profile, landing page, dan sistem digital lainnya.
-
-}
 `.trim()
   }
 }

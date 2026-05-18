@@ -115,7 +115,22 @@ export class IntentRepository {
             name: row.agent.name,
             slug: row.agent.slug,
             description: row.agent.description,
+
+            systemPrompt: row.agent.systemPrompt ?? null,
+            customPrompt: row.agent.customPrompt ?? null,
+
+            llmModelId: row.agent.llmModelId ?? null,
+
+            temperature: row.agent.temperature ?? 0.7,
+            maxTokens: row.agent.maxTokens ?? null,
+            memoryEnabled: row.agent.memoryEnabled ?? true,
+
+            metadata: row.agent.metadata ?? null,
+
             isActive: row.agent.isActive,
+
+            createdAt: row.agent.createdAt,
+            updatedAt: row.agent.updatedAt,
           }
         : null,
     }

@@ -40,7 +40,7 @@ export class ToolExecutionStrategy implements ExecutionStrategy {
     const results: Record<string, unknown> = {}
     for (const res of settledTools) {
       if (res.status === 'fulfilled') {
-        results[res.slug] = res.value
+        results[res.slug] = res.value.data
       } else {
         results[res.slug] = { error: String(res.reason) }
       }

@@ -1,16 +1,15 @@
-import { ollamaService } from './ollama.service'
+// import { ollamaService } from './ollama.service'
 import { openAiService } from './openAi.service'
 import type { PlannerInput, PlannerOutput, Intent } from '../types'
+import { estimateTokens, TokenEstimator } from '../utils/token-estimator.utils'
 
 class ToolPlannerService {
 
   async plan(input: PlannerInput): Promise<PlannerOutput> {
     const prompt = this.buildPrompt(input)
-    console.log("[Planner] Prompt :", prompt)
-    const start = Date.now()
-    const raw = await openAiService.generateJson(prompt)
-    const duration = Date.now() - start
-    console.log(`[Planner] response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
+    // console.log("[Planner] Prompt :", prompt)
+   
+    const raw = await openAiService.generateJson(prompt) 
 
     try {
       return this.safeParse(raw)
@@ -31,42 +30,39 @@ class ToolPlannerService {
     const recentUsage = this.buildRecentUsageHints(input.recentUsage)
 
     return `
-Kamu adalah AI PLANNER profesional.
+ROLE: AI Planner.
 
-Tugasmu:
-Menentukan resource apa saja yang dibutuhkan untuk menjawab user.
+Tujuan:
+Tentukan resource untuk menjawab user.
 
 Resource yang tersedia:
-1. Tools → untuk aksi/data realtime
-2. Knowledge → untuk informasi statis/kebijakan
-3. Chat → untuk obrolan biasa
+1. Tools → aksi/data realtime
+2. Knowledge → informasi statis/informasi
+3. Chat → obrolan biasa
 
 
-PENTING: MULTI-TOOLS
-Jika user menanyakan BEBERAPA hal sekaligus
-JANGAN hanya pilih 1 tools jika user meminta multiple hal!
+MULTI-QUESTION:
+Jika user menanyakan beberapa hal → pilih SEMUA tools relevan.
 
-DETAIL TOOLS YANG TERSEDIA :
+TOOLS :
 ${toolsDetails}
 
-
-DETAIL KNOWLEDGE YANG TERSEDIA :
+KNOWLEDGES :
 ${knowledgeDetails}
 
-RIWAYAT PENGGUNAAN TOOLS (HINT)
+HINT RIWAYAT:
 ${recentUsage}
 
-Gunakan riwayat ini sebagai PREFERENSI, 
-tetapi tetap pilih resource yang PALING RELEVAN dengan pesan user.
+Gunakan riwayat ini sebagai PREFERENSI tetap pilih resource yang PALING RELEVAN dengan pesan user., 
 
 PESAN USER :
 "${input.userText}"
 
 ATURAN PEMILIHAN :
-1. Hanya boleh memilih tools dan knowledge dari daftar di atas
+1. Hanya boleh pilih dari daftar tools/knowledge.
 2. Jika tools/knowledge cukup untuk menjawab → chat = false
-3. Jika bisa dijawab dengan kombinasi tools + knowledge → pilih SEMUA
-4. Jika user menanyakan sesuatu di LUAR cakupan tools/knowledge → chat = true
+3. Jika bisa dijawab dengan kombinasi tools + knowledge
+4. Jika diluar cakupan tools/knowledge → chat = true
 
 CONTOH OUTPUT :
 Output: {"tools": ["tool_1", "tool_2"], "knowledge": ["knowledege_1", "knowledge_2"], "chat": false}

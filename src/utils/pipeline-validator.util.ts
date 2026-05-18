@@ -1,5 +1,7 @@
 // utils/pipeline-validator.util.ts
-import type { Agent, ToolParam } from '../types'
+import type { ToolParam } from '../types'
+import type { Agent } from '../types/agent.types'
+
 
 export class PipelineValidator {
   static validateAgent(agent: Agent | null, slug: string) {

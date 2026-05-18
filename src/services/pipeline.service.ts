@@ -28,7 +28,7 @@ import { confidenceDecisionService } from '../services/confidence-decision.servi
 
 import { config } from '../config'
 import type { PipelineInput, PipelineResult, ToolMissingParams, PlannerOutput, Intent, IntentMatch, ToolParam, PendingIntentState } from '../types'
-import { AgentResponse } from '../types/agent.types'
+import { Agent } from '../types/agent.types'
 import { executionContext } from '../utils/strategies/execution-context'
 
 class PipelineService {
@@ -88,7 +88,7 @@ class PipelineService {
       const vectorHints = await vectorService.findIntent(
         queryEmbedding,
         intents,
-        agent as AgentResponse
+        agent as Agent
       )
 
       // ============================================================
@@ -144,6 +144,7 @@ class PipelineService {
       // LOW CONFIDENCE → (STOP TOOL FLOW)
       if (decision.action === 'chat') {
         return await this.handlePureChat(
+          agent as Agent,
           input,
           memoryContext,
           startTotal
@@ -162,6 +163,7 @@ class PipelineService {
 
       if (safePlan.chat === true) {
         return await this.handlePureChat(
+          agent as Agent,
           input,
           memoryContext,
           startTotal
@@ -235,7 +237,10 @@ class PipelineService {
         {
           ...input,
           text: enrichedUserQuery
-        }, apiResults)
+        }, 
+        apiResults,
+        agent as Agent
+      )
       
       const intentLabel = [
         ...(safePlan.handlers || []),
@@ -281,7 +286,7 @@ class PipelineService {
   private async resumePendingIntent(
     input: PipelineInput,
     pending: PendingIntentState,
-    agent: AgentResponse | null, 
+    agent: Agent | null, 
     startTotal: number,
   ): Promise<PipelineResult> {
     console.log(`[Resuming] Found pending state:`, pending);
@@ -296,12 +301,12 @@ class PipelineService {
       console.error('[Resuming] No intents found for slugs:', intentSlugs);
       conversationStateService.clear(input.user_id, input.app_name);
       
-      const aiResponse = await generalChatService.handle(input);
-      return PipelineFormatter.buildEarly({
-        intent: 'general_chat',
-        score: 0,
-        message: aiResponse
-      }, startTotal);
+      return await this.handlePureChat(
+          agent as Agent,
+          input,
+          null,
+          startTotal
+      )
     }
 
     // ============================================================
@@ -382,12 +387,12 @@ class PipelineService {
         
         if (!state) {
           conversationStateService.clear(input.user_id, input.app_name);
-          const aiResponse = await generalChatService.handle(input);
-          return PipelineFormatter.buildEarly({
-            intent: 'general_chat',
-            score: 0,
-            message: aiResponse
-          }, startTotal);
+          return await this.handlePureChat(
+              agent as Agent,
+              input,
+              null,
+              startTotal
+          )
         }
       }
       
@@ -418,7 +423,7 @@ class PipelineService {
       text: lastUserMessage  // ← Gunakan pertanyaan asli, bukan "jakarta"
     };
     
-    const naturalResponse = await this.naturalize(naturalizeInput, apiResults)
+    const naturalResponse = await this.naturalize(naturalizeInput, apiResults, agent as Agent)
     
     // Return response yang menggabungkan kedua hasil
     return PipelineFormatter.buildSuccessMulti(
@@ -775,14 +780,15 @@ class PipelineService {
       }
     }
     console.log(`[ExecuteSafePlan] Results:`, results)
-    return results as PipelineResult
+    return results
   }
 
   // ============================================================
   // STAGE 5 — NATURALIZATION OR PURE CHAT
   // ============================================================
-  private async naturalize(input: PipelineInput, apiResult: unknown) {
+  private async naturalize(input: PipelineInput, apiResult: unknown, agent: Agent) {
     return await naturalizationService.naturalize(
+      agent,
       apiResult,
       input.text,
       input.attributes?.name as string,
@@ -791,8 +797,9 @@ class PipelineService {
   }
 
   private async handlePureChat(
+    agent: Agent,
     input: PipelineInput,
-    memoryContext: string,
+    memoryContext: string | null,
     startTotal: number
   ): Promise<PipelineResult> {
 
@@ -801,7 +808,7 @@ class PipelineService {
     const aiResponse = await generalChatService.handle({
       ...input,
       text: memoryContext + input.text
-    })
+    }, agent)
 
     // Simpan episodic memory juga untuk chat biasa
     const messages = ConversationUtil.buildMessages(input, {
@@ -812,12 +819,6 @@ class PipelineService {
       input.user_id,
       input.app_name,
       messages,
-      {
-        handlers: [],
-        tools: [],
-        knowledge: [],
-        chat: true
-      }
     )
 
     return PipelineFormatter.buildEarly({
@@ -890,7 +891,7 @@ class PipelineService {
   // ============================================================
   // UTILS — GET AGENT
   // ============================================================
-  private async getAgentBySlug(slug: string): Promise<AgentResponse | null> {
+  private async getAgentBySlug(slug: string): Promise<Agent | null> {
     try {
       return await agentRepository.findBySlug(slug)
     } catch (err) {

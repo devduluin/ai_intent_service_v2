@@ -26,20 +26,8 @@ class ToolExecutorService {
       timeout: 15000, // default tool timeout 15s
     };
 
-    // console.log(`[ToolExecutorService] Executing tool "${tool.slug}" with config:`, {
-    //   method: config.method,
-    //   url: config.url,
-    //   headers: config.headers,
-    //   params: config.params,
-    //   data: config.data,
-    // });
-
     try {
       const response = await this.retryRequest(config);
-      // console.log(`[ToolExecutorService] Response from tool "${tool.slug}":`, {
-      //   status: response.status,
-      //   data: response.data,
-      // });
       return {
         success: true,
         tool: tool.slug,

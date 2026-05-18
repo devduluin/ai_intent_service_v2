@@ -1,7 +1,8 @@
 import { ChromaClient, Collection, IncludeEnum } from 'chromadb'
 import { config } from '../config'
 import { ollamaService } from './ollamaRaw.service'
-import type { Agent, Intent, IntentMatch } from '../types'
+import type { Agent } from '../types/agent.types'
+import type { Intent, IntentMatch } from '../types'
 
 // ============================================================
 // Vector DB Service — Multi Agent Intent Search

@@ -161,9 +161,8 @@ Tawarkan bantuan lain jika perlu.
   Aturan Ketat:
   1. Kembalikan HANYA nilai aslinya saja.
   2. Jika informasi "${paramDescription}" TIDAK ADA dalam input pengguna, jawab dengan kata "null".
-  3. Jangan berikan penjelasan, jangan berikan contoh tambahan.
-  4. Jangan gunakan tanda baca atau karakter tambahan.
-  5. JANGAN menebak atau menggunakan nilai default jika tidak disebutkan secara eksplisit.
+  3. Jangan berikan penjelasan apapun, tanda baca atau karakter tambahan.
+  4. JANGAN menebak atau menggunakan nilai default jika tidak disebutkan secara eksplisit.
 
   Nilai:`.trim()
 
@@ -206,28 +205,28 @@ Tawarkan bantuan lain jika perlu.
   // ===========================================================
   // Generic chat helper (dipakai banyak service)
   // ===========================================================
-  async chat(
-    prompt: string,
-    llmModel: string = config.ollama.llmModel,
-    options: { temperature?: number; num_predict?: number } = {}
-  ): Promise<string> {
-    console.log(`[Ollama] Chatting with prompt:`, prompt)
-    // ⏱️ start timer
-    const start = Date.now()
-    const response = await this.client.chat({
-      model: llmModel,
-      messages: [{ role: 'user', content: prompt }],
-      options: {
-        temperature: options.temperature ?? 0.4,
-        num_predict: options.num_predict ?? 128,
-      },
-    })
+  // async chat(
+  //   prompt: string,
+  //   llmModel: string = config.ollama.llmModel,
+  //   options: { temperature?: number; num_predict?: number } = {}
+  // ): Promise<string> {
+  //   console.log(`[Ollama] Chatting with prompt:`, prompt)
+  //   // ⏱️ start timer
+  //   const start = Date.now()
+  //   const response = await this.client.chat({
+  //     model: llmModel,
+  //     messages: [{ role: 'user', content: prompt }],
+  //     options: {
+  //       temperature: options.temperature ?? 0.4,
+  //       num_predict: options.num_predict ?? 128,
+  //     },
+  //   })
 
-    const duration = Date.now() - start
-    console.log(`[Chat Ollama] ${llmModel} with options ${JSON.stringify(options)} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
+  //   const duration = Date.now() - start
+  //   console.log(`[Chat Ollama] ${llmModel} with options ${JSON.stringify(options)} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
 
-    return response.message.content.trim()
-  }
+  //   return response.message.content.trim()
+  // }
 
   // ===========================================================
   // NEW: MESSAGE-BASED CHAT (FOR RAG / AGENT / MODFILE)

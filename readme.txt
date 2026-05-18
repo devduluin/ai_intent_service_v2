@@ -110,3 +110,10 @@ POST /admin/knowledge/knowledge-source
   "type": "url",
   "url": "https://docs.workin.duluin.com"
 }
+
+responseMapping: JSONB
+{
+  "successPath": "data.success",
+  "messagePath": "data.message",
+  "dataPath": "data"
+}

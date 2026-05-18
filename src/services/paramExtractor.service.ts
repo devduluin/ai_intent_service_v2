@@ -69,7 +69,7 @@ class ParamExtractorService {
       // Pilih service berdasarkan config.default.provider
       const provider = config.default?.provider || 'ollama'
       
-      if (provider === 'openai') {
+      if (provider === 'qwen') {
         rawValue = await openAiService.extractParam(
           text,
           param.extractPrompt,

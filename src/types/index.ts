@@ -1,3 +1,4 @@
+import type { Agent } from './agent.types'
 // ============================================================
 // Core Types
 // ============================================================
@@ -5,31 +6,39 @@ export type ExecutionType =
   | 'handler'
   | 'llm'
 
-export type Agent = {
-  id: string
-  name: string
-  slug: string
-  description?: string | null
-  isActive: boolean
-  metadata?: Record<string, any> | null
-  createdAt?: Date
-  updatedAt?: Date
-}
-
 export interface Tool {
   id: string
+
   name: string
   slug: string
   description: string | null
+
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   url: string
+
   authType?: 'none' | 'bearer' | 'api_key'
-  headers?: object | null
-  bodyTemplate?: object | null
+
+  headers?: Record<string, any> | null
+  bodyTemplate?: Record<string, any> | null
+
   isActive: boolean
+
+  // 🧠 NEW: response transformation layer
+  responseMapping?: ToolResponseMapping | null
+
+  // 🧠 NEW: agent access control
+  allowedAgentDelegates?: string[]
+
   createdAt?: Date
   updatedAt?: Date
+
   parameters?: ToolParam[]
+}
+
+export interface ToolResponseMapping {
+  successPath?: string
+  messagePath?: string
+  dataPath?: string
 }
 
 export interface Knowledge {
@@ -67,6 +76,7 @@ export interface Intent {
   // FROM MAPPING TABLE (NOT DIRECT RELATION)
   tools?: IntentToolMapping[]
   knowledge?: IntentKnowledgeMapping[]
+  
   agent?: Agent | null
 }
 

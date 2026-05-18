@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { config } from '../config'
+import { estimateTokens, estimateMessageTokens, TokenEstimator } from '../utils/token-estimator.utils'
 
 // ============================================================
 // Alibaba Model Studio Service — wrapper untuk embed & chat
@@ -77,7 +78,9 @@ class OpenAiService {
     originalQuery: string,
     userName: string,
     language = 'Indonesia',
-    llmModel = config.alibaba.naturalModel || "qwen3-8b",
+    systemPrompt: string,
+
+    llmModel: string,
     options: { temperature?: number; num_predict?: number } = {}
   ): Promise<string> {
     
@@ -87,9 +90,11 @@ class OpenAiService {
     const isMultiResult = this.isMultiResult(apiResult)
     let prompt: string
     const firstName = userName.split(' ')[0]
-    const userContext = firstName 
+    const firstNameContext = firstName 
       ? `Nama pengguna: "${firstName}"` 
       : '';
+
+    prompt = `${systemPrompt}`
     
     if (isMultiResult) {
       // Multi-result: ada beberapa tool/knowledge yang dijalankan
@@ -104,24 +109,28 @@ class OpenAiService {
           return `- ${tool}: ${JSON.stringify(result)}`
         })
         .join('\n\n')
+
       
       prompt = `
-Kamu adalah asisten yang mengubah data JSON menjadi kalimat.
-${userContext}
+${systemPrompt}
+
+${firstNameContext}
 Pengguna Bertanya: "${originalQuery}"
 
-Hasil JSON beberapa Tools/Knowledge:
+Data JSON:
 ${resultsList}
 
 Tugas: Gunakan data JSON diatas sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
-Langsung jawab dengan kalimat yang ramah dan informatif.
+
+Tawarkan bantuan lain jika bentuknya pertanyaan.
 `.trim()
       
     } else {
       // Single result: hanya satu API/tool yang dijalankan
       prompt = `
-Kamu adalah asisten yang mengubah data JSON menjadi kalimat.
-${userContext}
+${systemPrompt}
+
+${firstNameContext}
 Pengguna Bertanya: "${originalQuery}"
 
 Data JSON:
@@ -129,8 +138,8 @@ ${JSON.stringify(apiResult, null, 2)}
 
 Tugas: Gunakan data JSON sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
 Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
-Langsung jawab dengan kalimat yang ramah dan informatif.
-Tawarkan bantuan lain jika perlu.
+
+Tawarkan bantuan lain jika bentuknya pertanyaan.
 `.trim()
     }
 
@@ -144,6 +153,14 @@ Tawarkan bantuan lain jika perlu.
     })
 
     const duration = Date.now() - start
+    const estimatedPromptTokens = estimateTokens(prompt, 'alibaba')
+    const estimatedresponseTokens = estimateTokens(completion.choices[0]?.message?.content || '', 'alibaba')
+    // const detailedEstimate = TokenEstimator.estimateDetailed(prompt, { modelType: 'alibaba' })
+
+    console.log(`[Alibaba naturalize] Estimated prompt tokens: ${estimatedPromptTokens}`)
+    console.log(`[Alibaba naturalize] Estimated response tokens: ${estimatedresponseTokens}`)
+    // console.log(`[Alibaba naturalize] Token details:`, detailedEstimate)
+    
     console.log(`[Alibaba naturalize] with model ${llmModel} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
 
     return completion.choices[0]?.message?.content || ''
@@ -178,13 +195,13 @@ Tawarkan bantuan lain jika perlu.
   ): Promise<unknown> {
     const prompt = `
 Tugas: Ambil nilai untuk "${paramDescription}" dari input pengguna di bawah ini.
-Input dari Pengguna: "${userInput}"
+Input Pengguna: "${userInput}"
 Tipe Target: ${paramType}
 
 Aturan Ketat:
 1. Kembalikan HANYA nilai aslinya saja.
-2. Jika informasi "${paramDescription}" TIDAK ADA dalam input pengguna, jawab dengan kata "null".
-3. Jangan berikan penjelasan, jangan berikan contoh tambahan.
+2. Jika informasi "${paramDescription}" TIDAK ADA, jawab dengan kata "null".
+3. Jangan berikan penjelasan apapun.
 4. Jangan gunakan tanda baca atau karakter tambahan.
 5. JANGAN menebak atau menggunakan nilai default jika tidak disebutkan secara eksplisit.
 
@@ -196,6 +213,13 @@ Nilai:`.trim()
       temperature: 0,
       max_tokens: 60,
     })
+
+
+    const estimatedPromptTokens = estimateTokens(prompt, 'alibaba')
+    const detailedEstimate = TokenEstimator.estimateDetailed(prompt, { modelType: 'alibaba' })
+
+    console.log(`[Extract parameter] Estimated prompt tokens: ${estimatedPromptTokens}`)
+    console.log(`[Extract parameter] Token details:`, detailedEstimate)
 
     let raw = response.choices[0]?.message?.content?.trim() || '';
     
@@ -224,7 +248,7 @@ Nilai:`.trim()
     llmModel: string = config.alibaba.llmModel || "qwen3-8b",
     options: { temperature?: number; num_predict?: number } = {}
   ): Promise<string> {
-    console.log(`[Alibaba] Chatting with prompt length:`, prompt.length)
+
     const start = Date.now()
     
     const completion = await this.createCompletion({
@@ -235,6 +259,12 @@ Nilai:`.trim()
     })
 
     const duration = Date.now() - start
+    const estimatedPromptTokens = estimateTokens(prompt, 'alibaba')
+    const estimatedresponseTokens = estimateTokens(completion.choices[0]?.message?.content?.trim() || '', 'alibaba')
+
+    
+    console.log(`[Chat] Estimated prompt tokens: ${estimatedPromptTokens}`)
+    console.log(`[Chat] Estimated response tokens: ${estimatedresponseTokens}`)
     console.log(`[Chat Alibaba] ${llmModel} with options ${JSON.stringify(options)} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
 
     return completion.choices[0]?.message?.content?.trim() || ''
@@ -259,7 +289,14 @@ Nilai:`.trim()
     })
 
     const duration = Date.now() - start
-    console.log(`[Planner] ${llmModel} with options ${JSON.stringify(options)} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
+    const estimatedPromptTokens = estimateMessageTokens(messages, 'alibaba')
+    const estimatedresponseTokens = estimateTokens(completion.choices[0]?.message?.content?.trim() || '', 'alibaba')
+
+    
+    console.log(`[Message] Estimated prompt tokens: ${estimatedPromptTokens}`)
+    console.log(`[Message] Estimated response tokens: ${estimatedresponseTokens}`)
+    
+    console.log(`[Message] ${llmModel} with options ${JSON.stringify(options)} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
 
     return completion.choices[0]?.message?.content?.trim() || ''
   }
@@ -269,15 +306,26 @@ Nilai:`.trim()
   // ===========================================================
   async generateJson(prompt: string): Promise<string> {
     console.log(`[Alibaba model generateJson]:`, config.alibaba.llmModel)
-    
+    const start = Date.now()
+
     const response = await this.createCompletion({
       model: config.alibaba.llmModel || "qwen3-8b",
       messages: [
-        { role: 'user', content: `Return JSON only:\n${prompt}` },
+        { role: 'user', content: prompt },
       ],
       temperature: 0,
       max_tokens: 64,
     })
+
+    const duration = Date.now() - start
+    const estimatedPromptTokens = estimateTokens(prompt, 'alibaba')
+    const estimatedresponseTokens = estimateTokens(response.choices[0]?.message?.content?.trim() || '', 'alibaba')
+    // const detailedEstimate = TokenEstimator.estimateDetailed(prompt, { modelType: 'alibaba' })
+
+    
+    console.log(`[Planner] Estimated prompt tokens: ${estimatedPromptTokens}`)
+    console.log(`[Planner] Estimated response tokens: ${estimatedresponseTokens}`)
+    console.log(`[Planner] response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
     
     const text = response.choices[0]?.message?.content?.trim() || '{}'
 

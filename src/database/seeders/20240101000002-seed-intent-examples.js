@@ -193,104 +193,104 @@ module.exports = {
       // ======================================================
       // GET TRAVEL REQUEST STATUS
       // ======================================================
-      { intent: 'travel_request_status', text: 'Cek status perjalanan dinas', language: 'id' },
-      { intent: 'travel_request_status', text: 'status perjalanan dinas saya', language: 'id' },
-      { intent: 'travel_request_status', text: 'status perjalanan dinas bulan ini', language: 'id' },
-      { intent: 'travel_request_status', text: 'status perjalanan dinas bulan lalu', language: 'id' },
+      // { intent: 'travel_request_status', text: 'Cek status perjalanan dinas', language: 'id' },
+      // { intent: 'travel_request_status', text: 'status perjalanan dinas saya', language: 'id' },
+      // { intent: 'travel_request_status', text: 'status perjalanan dinas bulan ini', language: 'id' },
+      // { intent: 'travel_request_status', text: 'status perjalanan dinas bulan lalu', language: 'id' },
 
-      { intent: 'travel_request_status', text: 'Check travel request status', language: 'en' },
-      { intent: 'travel_request_status', text: 'My travel request status', language: 'en' },
-      { intent: 'travel_request_status', text: 'Travel request status this month', language: 'en' },
-      { intent: 'travel_request_status', text: 'Travel request status last month', language: 'en' },
+      // { intent: 'travel_request_status', text: 'Check travel request status', language: 'en' },
+      // { intent: 'travel_request_status', text: 'My travel request status', language: 'en' },
+      // { intent: 'travel_request_status', text: 'Travel request status this month', language: 'en' },
+      // { intent: 'travel_request_status', text: 'Travel request status last month', language: 'en' },
 
       // ======================================================
       // GET TRAVEL REQUEST TOTAL
       // ======================================================
-      { intent: 'travel_request_total', text: 'Berapa total perjalanan dinas?', language: 'id' },
-      { intent: 'travel_request_total', text: 'total perjalanan dinas saya', language: 'id' },
-      { intent: 'travel_request_total', text: 'total perjalanan dinas bulan ini', language: 'id' },
-      { intent: 'travel_request_total', text: 'total perjalanan dinas bulan lalu', language: 'id' },
+      // { intent: 'travel_request_total', text: 'Berapa total perjalanan dinas?', language: 'id' },
+      // { intent: 'travel_request_total', text: 'total perjalanan dinas saya', language: 'id' },
+      // { intent: 'travel_request_total', text: 'total perjalanan dinas bulan ini', language: 'id' },
+      // { intent: 'travel_request_total', text: 'total perjalanan dinas bulan lalu', language: 'id' },
 
-      { intent: 'travel_request_total', text: 'Check travel request total', language: 'en' },
-      { intent: 'travel_request_total', text: 'My travel request total', language: 'en' },
-      { intent: 'travel_request_total', text: 'Travel request total this month', language: 'en' },
-      { intent: 'travel_request_total', text: 'Travel request total last month', language: 'en' },
+      // { intent: 'travel_request_total', text: 'Check travel request total', language: 'en' },
+      // { intent: 'travel_request_total', text: 'My travel request total', language: 'en' },
+      // { intent: 'travel_request_total', text: 'Travel request total this month', language: 'en' },
+      // { intent: 'travel_request_total', text: 'Travel request total last month', language: 'en' },
 
       // ======================================================
       // GET TRAVEL REQUEST UNSUCCESS
       // ======================================================
-      { intent: 'travel_request_unreported', text: 'Cek status perjalanan dinas', language: 'id' },
-      { intent: 'travel_request_unreported', text: 'status perjalanan dinas saya', language: 'id' },
-      { intent: 'travel_request_unreported', text: 'status perjalanan dinas bulan ini', language: 'id' },
-      { intent: 'travel_request_unreported', text: 'status perjalanan dinas bulan lalu', language: 'id' },
+      // { intent: 'travel_request_unreported', text: 'Cek status perjalanan dinas', language: 'id' },
+      // { intent: 'travel_request_unreported', text: 'status perjalanan dinas saya', language: 'id' },
+      // { intent: 'travel_request_unreported', text: 'status perjalanan dinas bulan ini', language: 'id' },
+      // { intent: 'travel_request_unreported', text: 'status perjalanan dinas bulan lalu', language: 'id' },
 
-      { intent: 'travel_request_unreported', text: 'Check travel request unreported', language: 'en' },
-      { intent: 'travel_request_unreported', text: 'My travel request unreported', language: 'en' },
-      { intent: 'travel_request_unreported', text: 'Travel request unreported this month', language: 'en' },
-      { intent: 'travel_request_unreported', text: 'Travel request unreported last month', language: 'en' },
+      // { intent: 'travel_request_unreported', text: 'Check travel request unreported', language: 'en' },
+      // { intent: 'travel_request_unreported', text: 'My travel request unreported', language: 'en' },
+      // { intent: 'travel_request_unreported', text: 'Travel request unreported this month', language: 'en' },
+      // { intent: 'travel_request_unreported', text: 'Travel request unreported last month', language: 'en' },
 
       // ======================================================
       // GET EMPLOYEE DETAIL
       // ======================================================
-      { intent: 'get_employee_detail', text: 'Tampilkan detail karyawan saya', language: 'id' },
-      { intent: 'get_employee_detail', text: 'tampilkan detail karyawan', language: 'id' },
-      { intent: 'get_employee_detail', text: 'detail karyawan', language: 'id' },
+      // { intent: 'get_employee_detail', text: 'Tampilkan detail karyawan saya', language: 'id' },
+      // { intent: 'get_employee_detail', text: 'tampilkan detail karyawan', language: 'id' },
+      // { intent: 'get_employee_detail', text: 'detail karyawan', language: 'id' },
 
-      { intent: 'get_employee_detail', text: 'Show my employee detail', language: 'en' },
-      { intent: 'get_employee_detail', text: 'Show employee detail', language: 'en' },
-      { intent: 'get_employee_detail', text: 'Employee detail', language: 'en' },
+      // { intent: 'get_employee_detail', text: 'Show my employee detail', language: 'en' },
+      // { intent: 'get_employee_detail', text: 'Show employee detail', language: 'en' },
+      // { intent: 'get_employee_detail', text: 'Employee detail', language: 'en' },
 
       // ======================================================
       // GET REQUEST WFH
       // ======================================================
-      { intent: 'request_wfh', text: 'Cek status WFH', language: 'id' },
-      { intent: 'request_wfh', text: 'status WFH saya', language: 'id' },
-      { intent: 'request_wfh', text: 'status WFH bulan ini', language: 'id' },
-      { intent: 'request_wfh', text: 'status WFH bulan lalu', language: 'id' },
+      // { intent: 'request_wfh', text: 'Cek status WFH', language: 'id' },
+      // { intent: 'request_wfh', text: 'status WFH saya', language: 'id' },
+      // { intent: 'request_wfh', text: 'status WFH bulan ini', language: 'id' },
+      // { intent: 'request_wfh', text: 'status WFH bulan lalu', language: 'id' },
 
-      { intent: 'request_wfh', text: 'Check WFH status', language: 'en' },
-      { intent: 'request_wfh', text: 'My WFH status', language: 'en' },
-      { intent: 'request_wfh', text: 'WFH status this month', language: 'en' },
-      { intent: 'request_wfh', text: 'WFH status last month', language: 'en' },
+      // { intent: 'request_wfh', text: 'Check WFH status', language: 'en' },
+      // { intent: 'request_wfh', text: 'My WFH status', language: 'en' },
+      // { intent: 'request_wfh', text: 'WFH status this month', language: 'en' },
+      // { intent: 'request_wfh', text: 'WFH status last month', language: 'en' },
 
       // ======================================================
       // GET REQUEST TUKAR SHIFT
       // ======================================================
-      { intent: 'request_tukar_shift', text: 'Cek status tukar shift', language: 'id' },
-      { intent: 'request_tukar_shift', text: 'status tukar shift saya', language: 'id' },
-      { intent: 'request_tukar_shift', text: 'status tukar shift bulan ini', language: 'id' },
-      { intent: 'request_tukar_shift', text: 'status tukar shift bulan lalu', language: 'id' },
+      // { intent: 'request_tukar_shift', text: 'Cek status tukar shift', language: 'id' },
+      // { intent: 'request_tukar_shift', text: 'status tukar shift saya', language: 'id' },
+      // { intent: 'request_tukar_shift', text: 'status tukar shift bulan ini', language: 'id' },
+      // { intent: 'request_tukar_shift', text: 'status tukar shift bulan lalu', language: 'id' },
 
-      { intent: 'request_tukar_shift', text: 'Check tukar shift status', language: 'en' },
-      { intent: 'request_tukar_shift', text: 'My tukar shift status', language: 'en' },
-      { intent: 'request_tukar_shift', text: 'Tukar shift status this month', language: 'en' },
-      { intent: 'request_tukar_shift', text: 'Tukar shift status last month', language: 'en' },
+      // { intent: 'request_tukar_shift', text: 'Check tukar shift status', language: 'en' },
+      // { intent: 'request_tukar_shift', text: 'My tukar shift status', language: 'en' },
+      // { intent: 'request_tukar_shift', text: 'Tukar shift status this month', language: 'en' },
+      // { intent: 'request_tukar_shift', text: 'Tukar shift status last month', language: 'en' },
 
       // ======================================================
       // GET REQUEST LEMBUR
       // ======================================================
-      { intent: 'request_overtime', text: 'Cek status izin lembur', language: 'id' },
-      { intent: 'request_overtime', text: 'status izin lembur saya', language: 'id' },
-      { intent: 'request_overtime', text: 'status izin lembur bulan ini', language: 'id' },
-      { intent: 'request_overtime', text: 'status izin lembur bulan lalu', language: 'id' },
+      // { intent: 'request_overtime', text: 'Cek status izin lembur', language: 'id' },
+      // { intent: 'request_overtime', text: 'status izin lembur saya', language: 'id' },
+      // { intent: 'request_overtime', text: 'status izin lembur bulan ini', language: 'id' },
+      // { intent: 'request_overtime', text: 'status izin lembur bulan lalu', language: 'id' },
 
-      { intent: 'request_overtime', text: 'Check overtime status', language: 'en' },
-      { intent: 'request_overtime', text: 'My overtime status', language: 'en' },
-      { intent: 'request_overtime', text: 'Overtime status this month', language: 'en' },
-      { intent: 'request_overtime', text: 'Overtime status last month', language: 'en' },
+      // { intent: 'request_overtime', text: 'Check overtime status', language: 'en' },
+      // { intent: 'request_overtime', text: 'My overtime status', language: 'en' },
+      // { intent: 'request_overtime', text: 'Overtime status this month', language: 'en' },
+      // { intent: 'request_overtime', text: 'Overtime status last month', language: 'en' },
 
       // ======================================================
       // GET REQUEST CUTI
       // ======================================================
-      { intent: 'get_leave_approval', text: 'Cek status cuti', language: 'id' },
-      { intent: 'get_leave_approval', text: 'status cuti saya', language: 'id' },
-      { intent: 'get_leave_approval', text: 'status cuti bulan ini', language: 'id' },
-      { intent: 'get_leave_approval', text: 'status cuti bulan lalu', language: 'id' },
+      // { intent: 'get_leave_approval', text: 'Cek status cuti', language: 'id' },
+      // { intent: 'get_leave_approval', text: 'status cuti saya', language: 'id' },
+      // { intent: 'get_leave_approval', text: 'status cuti bulan ini', language: 'id' },
+      // { intent: 'get_leave_approval', text: 'status cuti bulan lalu', language: 'id' },
 
-      { intent: 'get_leave_approval', text: 'Check cuti status', language: 'en' },
-      { intent: 'get_leave_approval', text: 'My cuti status', language: 'en' },
-      { intent: 'get_leave_approval', text: 'Cuti status this month', language: 'en' },
-      { intent: 'get_leave_approval', text: 'Cuti status last month', language: 'en' },
+      // { intent: 'get_leave_approval', text: 'Check cuti status', language: 'en' },
+      // { intent: 'get_leave_approval', text: 'My cuti status', language: 'en' },
+      // { intent: 'get_leave_approval', text: 'Cuti status this month', language: 'en' },
+      // { intent: 'get_leave_approval', text: 'Cuti status last month', language: 'en' },
     ]
 
     const rows = examples.map((e) => ({
