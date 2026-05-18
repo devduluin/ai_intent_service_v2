@@ -256,6 +256,7 @@ class PipelineService {
       })
 
       const summary = await episodicMemoryService.summarize(
+        agent as Agent,
         input.user_id,
         input.app_name,
         messages,
@@ -816,6 +817,7 @@ class PipelineService {
     })
 
     await episodicMemoryService.summarize(
+      agent as Agent,
       input.user_id,
       input.app_name,
       messages,

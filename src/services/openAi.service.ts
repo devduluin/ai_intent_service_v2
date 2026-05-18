@@ -244,8 +244,9 @@ Nilai:`.trim()
   // Generic chat helper (dipakai banyak service)
   // ===========================================================
   async chat(
+    provider: string,
+    llmModel: string,
     prompt: string,
-    llmModel: string = config.alibaba.llmModel || "qwen3-8b",
     options: { temperature?: number; num_predict?: number } = {}
   ): Promise<string> {
 

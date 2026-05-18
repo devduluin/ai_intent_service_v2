@@ -1,5 +1,7 @@
 import { openAiService } from './openAi.service'
 import { PlannerOutput, ChatMessage } from '../types'
+import { Agent } from '../types/agent.types'
+import { config } from '../config'
 import { trimChatHistory } from '../utils/trim-chat'
 
 type EpisodicMemory = {
@@ -72,6 +74,8 @@ class EpisodicMemoryService {
   // 3️⃣ CLASSIFY MEMORY SLOT (SUPER IMPORTANT)
   // ============================================================
   private async classifyMemoryKey(
+    provider: string,
+    llmModel: string,
     summary: string,
     planSeen?: PlannerOutput
   ): Promise<string> {
@@ -100,7 +104,7 @@ Jawab hanya nama kategori.
 `
 
     try {
-      const key = await openAiService.chat(prompt)
+      const key = await openAiService.chat(provider, llmModel, prompt)
       return key.trim().toLowerCase().replace(/\s/g, '_')
     } catch {
       return 'general_chat'
@@ -111,12 +115,15 @@ Jawab hanya nama kategori.
   // 4️⃣ UPSERT MEMORY SLOT ⭐ CORE FEATURE ⭐
   // ============================================================
   private async upsertMemory(
+    provider: string,
+    llmModel: string,
     userId: string,
     app: string,
     summary: string,
     planSeen?: PlannerOutput
   ) {
-    const memoryKey = await this.classifyMemoryKey(summary, planSeen)
+
+    const memoryKey = await this.classifyMemoryKey(provider, llmModel, summary, planSeen)
 
     const existingIndex = this.storeDb.findIndex(m =>
       m.user_id === userId &&
@@ -169,6 +176,7 @@ Jawab hanya nama kategori.
   // 6️⃣ SUMMARIZE CONVERSATION → STORE MEMORY
   // ============================================================
   async summarize(
+    agent: Agent,
     userId: string,
     app: string,
     chatHistory: ChatMessage[],
@@ -176,6 +184,10 @@ Jawab hanya nama kategori.
   ): Promise<string | null> {
 
     if (!chatHistory || chatHistory.length < 2) return null
+
+    const provider = agent.llmModel?.provider || config.default?.provider || 'ollama'
+    
+    const llmModel = agent.llmModel?.modelCode || config.ollama?.llmModel
 
     console.log('[Memory] Summarizing conversation...')
     const trimmedHistory = trimChatHistory(chatHistory, {
@@ -200,9 +212,9 @@ ${conversationText}
 `
 
     try {
-      const summary = (await openAiService.chat(prompt)).trim()
+      const summary = (await openAiService.chat(provider, llmModel, prompt)).trim()
 
-      await this.upsertMemory(userId, app, summary, planSeen)
+      await this.upsertMemory(provider, llmModel,userId, app, summary, planSeen)
 
       return summary
     } catch (err) {

@@ -37,6 +37,7 @@ class NaturalizationService {
     const temperature = agent.llmModel?.temperature || config.default?.temperature
 
     const systemPrompt = agent.systemPrompt || config.default?.systemPrompt
+    const customPrompt = agent.customPrompt || "ROLE: Assistant JSON extractor: "
     
     let result: string
     
@@ -46,7 +47,7 @@ class NaturalizationService {
         originalQuery,
         userName,
         language,
-        systemPrompt,
+        customPrompt,
         llmModel,
         {
           temperature: temperature || 0.6,
