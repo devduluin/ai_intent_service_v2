@@ -17,6 +17,7 @@ export class KnowledgeModel extends Model<
   declare description: string | null
   declare content: string | null
   declare type: 'faq' | 'article' | 'policy'
+  declare tags: string[] | null
   declare isActive: CreationOptional<boolean>
 
   declare ingestionStatus: CreationOptional<'idle' | 'processing' | 'completed' | 'failed'>
@@ -58,6 +59,11 @@ KnowledgeModel.init(
       type: DataTypes.ENUM('faq', 'article', 'policy'),
       allowNull: false,
       defaultValue: 'faq',
+    },
+
+    tags: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      allowNull: true,
     },
 
     isActive: {

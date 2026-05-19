@@ -1,7 +1,8 @@
 // strategies/knowledge-execution.strategy.ts
 import { PipelineInput, Knowledge } from '../../types'
 import { ExecutionStrategy } from '../../types/execution.types'
-import { ollamaService } from '../../services/ollama.service'
+// import { ollamaService } from '../../services/ollama.service'
+import { openAiService } from '../../services/openAi.service'
 import { knowledgeVectorService } from '../../services/knowledgeVector.service'
 
 // import { generalChatService } from '../../services/generalChat.service'
@@ -55,7 +56,7 @@ export class KnowledgeExecutionStrategy implements ExecutionStrategy {
     if (!knowledges.length) return {}
 
     // 1️⃣ Embed user query once
-    const queryEmbedding = await ollamaService.embed(context.text)
+    const queryEmbedding = await openAiService.embed(context.text)
 
     const knowledgePromises = knowledges.map(async (knowledge) => {
       console.log(

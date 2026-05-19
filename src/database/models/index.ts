@@ -11,6 +11,7 @@ import KnowledgeChunkModel from './Knowledge-chunk.model'
 import { setupAssociations } from './associations'
 import AgentModel from './agent.model'
 import llmModel from './llmModel.model'
+import { EpisodicMemoryModel } from './episodic-memory.model'
 
 // Panggil sekali saja
 setupAssociations()
@@ -30,7 +31,8 @@ export {
   AgentModel,
   llmModel,
   KnowledgeSourceModel,
-  KnowledgeChunkModel
+  KnowledgeChunkModel,
+  EpisodicMemoryModel
 }
 
 export default {
@@ -45,5 +47,6 @@ export default {
   AgentModel,
   llmModel,
   KnowledgeSourceModel,
-  KnowledgeChunkModel
+  KnowledgeChunkModel,
+  EpisodicMemoryModel
 }

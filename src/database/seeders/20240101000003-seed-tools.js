@@ -28,6 +28,8 @@ module.exports = {
 
         bodyTemplate: null,
 
+        tags: ['weather', 'cuaca', 'hujan', 'angin'],
+
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -44,6 +46,8 @@ module.exports = {
         headers: null,
 
         bodyTemplate: null,
+
+        tags: ['time', 'jam', 'waktu'],
 
         isActive: true,
         createdAt: now,
@@ -68,6 +72,8 @@ module.exports = {
 
         bodyTemplate: null,
 
+        tags: ['attendance', 'checkin', 'checkout', ],
+
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -90,6 +96,8 @@ module.exports = {
         }),
 
         bodyTemplate: null,
+
+        tags: ['izin', 'cuti', 'sakit'],
 
         isActive: true,
         createdAt: now,
@@ -116,8 +124,10 @@ module.exports = {
 
         isActive: true,
 
+        tags: ['jadwal', 'shift', 'checkin', 'checkout'],
+
         allowedAgentDelegates: ['analyst'],
-        
+
         createdAt: now,
         updatedAt: now,
       },
@@ -139,6 +149,8 @@ module.exports = {
         }),
 
         bodyTemplate: null,
+
+        tags: ['payroll', 'slip', 'gaji'],
 
         isActive: true,
         createdAt: now,
@@ -163,6 +175,8 @@ module.exports = {
 
         bodyTemplate: null,
 
+        tags: ['klaim', 'reimburse', 'expense'],
+
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -185,6 +199,8 @@ module.exports = {
         }),
 
         bodyTemplate: null,
+
+        tags: ['payroll', 'claims', 'advance'],
 
         isActive: true,
         createdAt: now,
@@ -209,6 +225,8 @@ module.exports = {
 
         bodyTemplate: null,
 
+        tags: ['claim', 'advance', 'total'],
+
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -231,6 +249,8 @@ module.exports = {
         }),
 
         bodyTemplate: null,
+
+        tags: ['claim', 'advance', 'unreported'],
 
         isActive: true,
         createdAt: now,
@@ -255,6 +275,8 @@ module.exports = {
 
         bodyTemplate: null,
 
+        tags: ['perjalanan', 'dinas', 'travel'],
+
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -277,6 +299,8 @@ module.exports = {
         }),
 
         bodyTemplate: null,
+
+        tags: ['payroll', 'claims', 'travel', 'total'],
 
         isActive: true,
         createdAt: now,
@@ -301,6 +325,8 @@ module.exports = {
 
         bodyTemplate: null,
 
+        tags: ['payroll', 'claims', 'travel', 'unreported'],
+
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -323,6 +349,8 @@ module.exports = {
         }),
 
         bodyTemplate: null,
+
+        tags: ['employee', 'profile'],
 
         isActive: true,
         createdAt: now,
@@ -347,6 +375,8 @@ module.exports = {
 
         bodyTemplate: null,
 
+        tags: ['attendance', 'wfh', 'request'],
+
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -369,6 +399,8 @@ module.exports = {
         }),
 
         bodyTemplate: null,
+
+        tags: ['attendance', 'shift', 'request', 'tukar-shift'],
 
         isActive: true,
         createdAt: now,
@@ -393,6 +425,8 @@ module.exports = {
 
         bodyTemplate: null,
 
+        tags: ['attendance', 'overtime', 'request'],
+
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -415,6 +449,8 @@ module.exports = {
         }),
 
         bodyTemplate: null,
+
+        tags: ['attendance', 'leave', 'approval'],
 
         isActive: true,
         createdAt: now,

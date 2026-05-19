@@ -20,6 +20,7 @@ export interface Tool {
 
   headers?: Record<string, any> | null
   bodyTemplate?: Record<string, any> | null
+  tags?: string[] | null
 
   isActive: boolean
 
@@ -48,6 +49,7 @@ export interface Knowledge {
   description: string
   type: 'faq' | 'article' | 'policy'
   content: string
+  tags?: string[] | null
   isActive: boolean
   ingestionStatus: 'idle' | 'processing' | 'completed' | 'failed'
   lastIngestedAt?: Date | null
@@ -199,6 +201,7 @@ export interface OllamaConfig {
   baseUrl: string
   baseUrlRaw: string
   embedModel: string
+  toolCallingModel: string
   llmModel: string
   naturalModel?: string
 }

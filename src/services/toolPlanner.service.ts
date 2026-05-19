@@ -1,4 +1,4 @@
-// import { ollamaService } from './ollama.service'
+import { ollamaService } from './ollama.service'
 import { openAiService } from './openAi.service'
 import type { PlannerInput, PlannerOutput, Intent } from '../types'
 import { estimateTokens, TokenEstimator } from '../utils/token-estimator.utils'
@@ -7,10 +7,10 @@ class ToolPlannerService {
 
   async plan(input: PlannerInput): Promise<PlannerOutput> {
     const prompt = this.buildPrompt(input)
-    // console.log("[Planner] Prompt :", prompt)
+    console.log("[Planner] Prompt :", prompt)
    
     const raw = await openAiService.generateJson(prompt) 
-
+    console.log("[Planner] Raw output:", raw)
     try {
       return this.safeParse(raw)
     } catch (err) {
@@ -53,7 +53,7 @@ ${knowledgeDetails}
 HINT RIWAYAT:
 ${recentUsage}
 
-Gunakan riwayat ini sebagai PREFERENSI tetap pilih resource yang PALING RELEVAN dengan pesan user., 
+Gunakan riwayat sebagai PREFERENSI jika yakin RELEVAN dengan pesan user., 
 
 PESAN USER :
 "${input.userText}"
@@ -97,10 +97,10 @@ Output: {"tools": ["tool_1", "tool_2"], "knowledge": ["knowledege_1", "knowledge
     const parts: string[] = []
 
     if (recent.tools?.length)
-      parts.push(`User SERING memakai tools: ${recent.tools.join(', ')}`)
+      parts.push(`Tools: ${recent.tools.join(', ')}`)
 
     if (recent.knowledge?.length)
-      parts.push(`User SERING mengakses knowledge: ${recent.knowledge.join(', ')}`)
+      parts.push(`Knowledges: ${recent.knowledge.join(', ')}`)
 
     if (recent.chat)
       parts.push(`User SERING melakukan percakapan umum (chat)`)

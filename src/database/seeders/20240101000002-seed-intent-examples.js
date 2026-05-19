@@ -61,6 +61,7 @@ module.exports = {
       // ATTENDANCE INTENT (HRIS Core)
       // ======================================================
       { intent: 'attendance', text: 'Saya sudah absen belum?', language: 'id' },
+      { intent: 'attendance', text: 'Kenapa saya tidak bisa absen?', language: 'id' },
       { intent: 'attendance', text: 'Cek absensi saya hari ini', language: 'id' },
       { intent: 'attendance', text: 'Riwayat absensi saya', language: 'id' },
       { intent: 'attendance', text: 'Saya telat berapa kali bulan ini?', language: 'id' },

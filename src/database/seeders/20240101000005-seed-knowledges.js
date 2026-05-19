@@ -28,6 +28,7 @@ module.exports = {
 
         `,
         type: 'faq',
+        tags: ['attendance', 'absensi', 'hr', 'faq'],
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -66,6 +67,7 @@ module.exports = {
 - Reset cuti mengikuti kebijakan perusahaan
         `,
         type: 'faq',
+        tags: ['leave', 'cuti', 'izin', 'hr', 'faq'],
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -96,6 +98,7 @@ module.exports = {
 - Perubahan akan efektif pada periode gajian berikutnya
         `,
         type: 'faq',
+        tags: ['salary', 'gaji', 'payroll', 'finance', 'faq'],
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -141,6 +144,7 @@ Dana Talangan adalah fasilitas pinjaman sementara bagi karyawan untuk keperluan 
 - Hanya dikenakan biaya administrasi Rp25.000
         `,
         type: 'faq',
+        tags: ['advance-claim', 'dana-talangan', 'pinjaman', 'finance', 'faq'],
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -190,6 +194,7 @@ Maksimal 5 hari kerja setelah pengeluaran biaya dilakukan
 - Jika masih ada perbedaan, ajukan banding melalui HR
         `,
         type: 'faq',
+        tags: ['claim-expense', 'reimburse', 'klaim', 'finance', 'faq'],
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -235,6 +240,7 @@ Maksimal 5 hari kerja setelah kembali dari perjalanan
 Ya, bisa mengajukan dana talangan khusus perjalanan dinas dengan batas maksimal 80% dari estimasi biaya
         `,
         type: 'faq',
+        tags: ['travel-request', 'perjalanan-dinas', 'surat-tugas', 'finance', 'faq'],
         isActive: true,
         createdAt: now,
         updatedAt: now,

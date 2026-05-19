@@ -52,7 +52,7 @@ class OpenAiService {
       const response = await this.client.embeddings.create({
         model: config.alibaba.embedModel || "text-embedding-v3",
         input: text,
-        encoding_format: "float",
+        // encoding_format: "float",
       })
       
       return response.data[0].embedding as number[]
@@ -115,7 +115,9 @@ class OpenAiService {
 ${systemPrompt}
 
 ${firstNameContext}
-Pengguna Bertanya: "${originalQuery}"
+
+Percakapan: 
+"${originalQuery}"
 
 Data JSON:
 ${resultsList}
@@ -131,7 +133,8 @@ Tawarkan bantuan lain jika bentuknya pertanyaan.
 ${systemPrompt}
 
 ${firstNameContext}
-Pengguna Bertanya: "${originalQuery}"
+
+Percakapan: "${originalQuery}"
 
 Data JSON:
 ${JSON.stringify(apiResult, null, 2)}

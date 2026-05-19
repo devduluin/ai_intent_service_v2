@@ -21,6 +21,7 @@ export default class ToolModel extends Model<
   declare authConfig: JSON | null
   declare headers: object | null
   declare bodyTemplate: object | null
+  declare tags: string[] | null
 
   declare responseMapping: Record<string, any> | null
 
@@ -75,6 +76,10 @@ ToolModel.init(
     },
     bodyTemplate: {
       type: DataTypes.JSON,
+      allowNull: true,
+    },
+    tags: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
       allowNull: true,
     },
     responseMapping: {

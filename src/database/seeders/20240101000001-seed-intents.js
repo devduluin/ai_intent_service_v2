@@ -44,7 +44,7 @@ module.exports = {
         agentId: hrisAgentId,
         slug: 'attendance',
         name: 'Attendance',
-        description: 'Mendapatkan informasi absensi',
+        description: 'Mendapatkan informasi absensi karyawan',
         executionType: 'llm',
         handlerKey: null,
         isActive: true,

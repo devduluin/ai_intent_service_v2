@@ -84,8 +84,8 @@ class GeneralChatService {
 
     // 2 CHAT HISTORY (role asli)
     const trimmedHistory = trimChatHistory(input.chat_history, {
-      maxMessages: 10,
-      maxLength: 256
+      maxMessages: 2,
+      maxLength: 200
     })
 
     if (trimmedHistory?.length) {

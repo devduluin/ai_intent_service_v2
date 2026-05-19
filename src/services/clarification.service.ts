@@ -9,13 +9,12 @@ class ClarificationService {
   // =========================================================
   // PRIVATE helper → call small LLM
   // =========================================================
-  private async generate(llmModel: string, prompt: string, options?: { num_predict?: number }) {
+  private async generate(provider: string, llmModel: string, prompt: string, options?: { num_predict?: number }) {
     // Pilih service berdasarkan config.default.provider
-    const provider = config.default?.provider || 'ollama'
 
     if (provider === 'qwen') {
-      const response = await openAiService.chat(llmModel, prompt, 
-        config.alibaba?.llmModel || "qwen3-8b",
+      const response = await openAiService.chat(provider, llmModel,
+         prompt,
         {
           temperature: 0.4,
           num_predict: options?.num_predict ?? 64,
@@ -66,7 +65,7 @@ Aturan Ketat:
 2. Beri sapaan hanya jika ada nama pengguna.
     `.trim()
 
-    return this.generate(llmModel, prompt)
+    return this.generate(provider, llmModel, prompt)
   }
 
   // =========================================================
@@ -118,7 +117,7 @@ Rules:
 - Sapa jika ada nama pengguna dan Langsung ke poin
     `.trim()
     
-    return this.generate(llmModel, prompt, { num_predict: 100 })
+    return this.generate(provider, llmModel, prompt, { num_predict: 100 })
   }
 
   // =========================================================
