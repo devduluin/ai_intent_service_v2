@@ -55,4 +55,11 @@ export async function intentRoutes(fastify: FastifyInstance): Promise<void> {
       return intentController.handleIntent(parsed.data, reply)
     }
   )
+
+  fastify.get(
+    '/list',
+    async (request, reply) => {
+      return intentController.listByKnowledgeAndFaq(request, reply)
+    }
+  )
 }
