@@ -77,9 +77,7 @@ class IntentController {
 
       return reply.send({
         success: true,
-        data: {
-          examples: sortedExamples
-        }
+        data: sortedExamples
       })
 
     } catch (err: any) {
