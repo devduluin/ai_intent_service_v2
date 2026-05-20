@@ -773,7 +773,9 @@ class PipelineService {
       apiResult,
       input.text,
       input.attributes?.name as string,
-      input.language ?? 'Indonesia'
+      input.language ?? 'Indonesia',
+      undefined,
+      input.app_name
     )
   }
 

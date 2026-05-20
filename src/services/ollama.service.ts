@@ -47,7 +47,8 @@ class OllamaService {
     userName: string,
     language = 'Indonesia',
     llmModel = config.ollama.llmModel,
-    options: { temperature?: number; num_predict?: number } = {}
+    options: { temperature?: number; num_predict?: number } = {},
+    appName?: string
   ): Promise<string> {
     
    // ⏱️ start timer
@@ -59,6 +60,10 @@ class OllamaService {
     const userContext = firstName 
     ? `Nama pengguna: "${firstName}"` 
     : '';
+
+    const strictRule = appName === 'hris_company'
+      ? '\nPENTING: HANYA gunakan data JSON di atas. JANGAN tambahkan informasi dari luar.\n'
+      : '';
     
     if (isMultiResult) {
       // Multi-result: ada beberapa tool/knowledge yang dijalankan
@@ -83,7 +88,7 @@ Hasil JSON beberapa Tools/Knowledge:
 ${resultsList}
 
 Tugas: Gunakan data JSON diatas sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
-Langsung jawab dengan kalimat yang ramah dan informatif.
+Langsung jawab dengan kalimat yang ramah dan informatif.${strictRule}
 `.trim()
       
     } else {
@@ -99,7 +104,7 @@ ${JSON.stringify(apiResult, null, 2)}
 Tugas: Gunakan data JSON sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
 Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
 Langsung jawab dengan kalimat yang ramah dan informatif.
-Tawarkan bantuan lain jika perlu.
+Tawarkan bantuan lain jika perlu.${strictRule}
 `.trim()
     }
 

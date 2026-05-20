@@ -78,7 +78,8 @@ class OpenAiService {
     userName: string,
     language = 'Indonesia',
     llmModel = config.alibaba.naturalModel || "qwen3-8b",
-    options: { temperature?: number; num_predict?: number } = {}
+    options: { temperature?: number; num_predict?: number } = {},
+    appName?: string
   ): Promise<string> {
     
     // ⏱️ start timer
@@ -89,6 +90,10 @@ class OpenAiService {
     const firstName = userName.split(' ')[0]
     const userContext = firstName 
       ? `Nama pengguna: "${firstName}"` 
+      : '';
+
+    const strictRule = appName === 'hris_company'
+      ? '\nPENTING: HANYA gunakan data JSON di atas. JANGAN tambahkan informasi dari luar.\n'
       : '';
     
     if (isMultiResult) {
@@ -114,7 +119,7 @@ Hasil JSON beberapa Tools/Knowledge:
 ${resultsList}
 
 Tugas: Gunakan data JSON diatas sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
-Langsung jawab dengan kalimat yang ramah dan informatif.
+Langsung jawab dengan kalimat yang ramah dan informatif.${strictRule}
 `.trim()
       
     } else {
@@ -130,7 +135,7 @@ ${JSON.stringify(apiResult, null, 2)}
 Tugas: Gunakan data JSON sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
 Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
 Langsung jawab dengan kalimat yang ramah dan informatif.
-Tawarkan bantuan lain jika perlu.
+Tawarkan bantuan lain jika perlu.${strictRule}
 `.trim()
     }
 

@@ -27,7 +27,7 @@ class GeneralChatService {
   ): Promise<string> {
 
     try {
-      const messages = this.buildMessages(input, context)
+      const messages = this.buildMessages(input, context, input.app_name)
       console.log('[GeneralChat] Messages:', messages)
       // Pilih service berdasarkan config.default.provider
       const provider = config.default?.provider || 'ollama'
@@ -61,13 +61,14 @@ class GeneralChatService {
   // =========================================================
   private buildMessages(
     input: PipelineInput,
-    context?: KnowledgeContext | KnowledgeContext[]
+    context?: KnowledgeContext | KnowledgeContext[],
+    agentSlug?: string
   ): ChatMessage[] {
 
     const messages: ChatMessage[] = []
 
     // 1 KNOWLEDGE RAG → SYSTEM (GROUND TRUTH)
-    const knowledge = this.formatKnowledgeContext(context)
+    const knowledge = this.formatKnowledgeContext(context, agentSlug)
     if (knowledge) {
       messages.push({
         role: 'system',
@@ -105,13 +106,23 @@ class GeneralChatService {
   // KNOWLEDGE CONTEXT → SYSTEM MESSAGE
   // =========================================================
   private formatKnowledgeContext(
-    context?: KnowledgeContext | KnowledgeContext[]
+    context?: KnowledgeContext | KnowledgeContext[],
+    agentSlug?: string
   ): string {
 
-    // if (!context) return ''
+    // Jika agent adalah hris_company → strict hanya dari knowledge
+    if (agentSlug === 'hris_company') {
+      return `
+KAMU ADALAH ASISTEN DASHBOARD ADMIN WORKIN.
 
-    // const items = Array.isArray(context) ? context : [context]
-    // if (!items.length) return ''
+ATURAN WAJIB:
+1. HANYA gunakan KNOWLEDGE INTERNAL yang diberikan di bawah ini sebagai sumber jawaban.
+2. JANGAN gunakan pengetahuan umum tentang Duluin, Workin, atau produk lainnya.
+3. Jika KNOWLEDGE tidak berisi jawaban → katakan "Maaf, saya tidak memiliki informasi tentang itu."
+4. DILARANG menebak atau menambahkan informasi di luar KNOWLEDGE.
+5. Jawab dengan bahasa yang jelas, singkat, dan langsung pada poinnya.
+`.trim()
+    }
 
     return `
 KAMU ADALAH CITRA, AI ASSISTANT DARI DULUIN BERBASIS KNOWLEDGE INTERNAL.
@@ -149,8 +160,6 @@ ATURAN PRIORITAS (WAJIB DIIKUTI):
 3 **Satu Creative**
 - Divisi creative & branding: desain grafis, konten digital, copywriting, branding, strategi kreatif.
 - Juga menyediakan pengembangan aplikasi: mobile apps, website company profile, landing page, dan sistem digital lainnya.
-
-}
 `.trim()
   }
 }

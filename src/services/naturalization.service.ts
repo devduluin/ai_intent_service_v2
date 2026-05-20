@@ -24,7 +24,8 @@ class NaturalizationService {
     originalQuery: string,
     userName: string,
     language: string = 'Indonesia',
-    llmModel?: string
+    llmModel?: string,
+    appName?: string
   ): Promise<string> {
     const start = Date.now()
     
@@ -43,7 +44,8 @@ class NaturalizationService {
         {
           temperature: 0.6,
           num_predict: config.default?.numPredict,
-        }
+        },
+        appName
       )
     } else {
       result = await ollamaService.naturalize(
@@ -55,7 +57,8 @@ class NaturalizationService {
         {
           temperature: 0.6,
           num_predict: config.default?.numPredict,
-        }
+        },
+        appName
       )
     }
     
