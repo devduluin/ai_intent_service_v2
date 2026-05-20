@@ -230,8 +230,58 @@ seed_hris_company.sql  ← satu-satunya file seed (SQL, bukan Sequelize)
 psql -U postgres -d ai_intent -f seed_hris_company.sql
 ```
 
+## 9. {{BASE_URL}} Replacement — Per-Client via Attributes
+
+### Latar Belakang
+Setiap client perusahaan memiliki domain dashboard berbeda. `{{BASE_URL}}` di knowledge harus diganti dengan domain sesuai client yang mengakses.
+
+### Mekanisme (3 layer proteksi)
+
+**Layer 1 — Pre-processing (input → LLM):**
+- File: `src/utils/strategies/knowledge-execution.strategy.ts`
+- `replaceBaseUrl()` membaca `context.attributes.company_dashboard_base_url` (dari frontend)
+- Fallback ke `process.env.COMPANY_DASHBOARD_URL` (untuk dev)
+- Diganti sebelum knowledge context dikirim ke LLM
+
+**Layer 2 — Prompt Instruction (LLM harus pakai URL):**
+- File: `src/services/ollama.service.ts` dan `src/services/openAi.service.ts`
+- `strictRule` untuk `hris_company`: "Jika Data JSON mengandung LINK/URL → WAJIB sertakan"
+- File: `src/services/generalChat.service.ts`
+- Rule #6 di system prompt `hris_company`: WAJIB sertakan link dari knowledge
+
+**Layer 3 — Post-processing (LLM output → user):**
+- File: `src/services/pipeline.service.ts` (method `postProcessResponse`)
+- File: `src/services/generalChat.service.ts` (method `postProcessResponse`)
+- Replace `{{base_url}}` (case-insensitive) dan `{{BASE_URL}}` di response LLM
+- Hanya aktif untuk `hris_company` — agent lain tidak terpengaruh
+
+### Layer 3b — URL Injection (anti-truncation)
+- File: `src/services/pipeline.service.ts` (method `injectKnowledgeUrls`)
+- Mengambil URL lengkap dari `apiResults.knowledge` (hasil knowledge execution)
+- Mendeteksi path URL yang dipotong LLM (contoh: `/moni` → harusnya `/monitoring`)
+- Mengganti dengan URL yang benar secara programatik
+
+### Cara Kerja
+Frontend mengirim `company_dashboard_base_url` di attributes:
+```json
+{
+  "attributes": {
+    "name": "Admin",
+    "company_dashboard_base_url": "https://client-a.hrms.com"
+  }
+}
+```
+Atau untuk development: set `COMPANY_DASHBOARD_URL` di `.env`.
+
+### File yang dimodifikasi:
+- **`src/utils/strategies/knowledge-execution.strategy.ts`** — `replaceBaseUrl()` baca dari `context.attributes.company_dashboard_base_url`
+- **`src/services/ollama.service.ts`** / **`src/services/openAi.service.ts`** — strictRule + URL instruction
+- **`src/services/pipeline.service.ts`** — `postProcessResponse()` untuk naturalization path
+- **`src/services/generalChat.service.ts`** — `postProcessResponse()` untuk general chat path + Rule #6
+
 ### Catatan:
 - Semua data `hris_company` duduk di atas data seed original (`0000-0007`) — **tidak mengganggu**
 - Operasi **DELETE + INSERT** untuk knowledge/intents milik `hris_company` saja — aman dijalankan berulang kali
 - Agent `hris` original dan agent lain tetap utuh tidak berubah
 - Semua nama fitur, tombol, menu, dan status **sesuai eksak dengan dashboard** `hrms_companiesV2`
+- **Semua perubahan di section ini hanya aktif untuk `hris_company`** (exact match `app_name`)

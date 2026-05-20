@@ -16,7 +16,24 @@ class TextChunkerService {
     let start = 0
 
     while (start < text.length) {
-      const end = start + chunkSize
+      let end = start + chunkSize
+
+      // If not at end of text, try to break at newline or space
+      if (end < text.length) {
+        const after = text.slice(end, end + 50)
+        const newlinePos = after.indexOf('\n')
+        if (newlinePos >= 0 && newlinePos < 20) {
+          end += newlinePos + 1
+        } else {
+          // Fallback: find last space before chunk boundary
+          const before = text.slice(Math.max(0, end - 30), end)
+          const lastSpace = before.lastIndexOf(' ')
+          if (lastSpace >= 0) {
+            end = end - (before.length - lastSpace)
+          }
+        }
+      }
+
       const slice = text.slice(start, end)
 
       chunks.push({

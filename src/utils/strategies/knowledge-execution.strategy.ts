@@ -4,6 +4,16 @@ import { ExecutionStrategy } from '../../types/execution.types'
 import { ollamaService } from '../../services/ollama.service'
 import { knowledgeVectorService } from '../../services/knowledgeVector.service'
 
+function replaceBaseUrl(text: string, context: PipelineInput): string {
+  const url = context.attributes?.company_dashboard_base_url as string
+    || process.env.COMPANY_DASHBOARD_URL
+    || ''
+  if (!url) return text
+  return text
+    .replace(/\{\{base_url\}\}/gi, url)
+    .replace(/\{\{BASE_URL\}\}/g, url)
+}
+
 // import { generalChatService } from '../../services/generalChat.service'
 // interface KnowledgeContext {
 //   title?: string
@@ -83,7 +93,7 @@ export class KnowledgeExecutionStrategy implements ExecutionStrategy {
             value: {
               type: 'knowledge',
               source: knowledge.slug,
-              context: knowledge.content,
+              context: replaceBaseUrl(knowledge.content, context),
               chunksFound: 0,
             },
           }
@@ -93,7 +103,7 @@ export class KnowledgeExecutionStrategy implements ExecutionStrategy {
         const ragContext = searchResult
           .map(chunk => {
             const score = chunk.score.toFixed(3)
-            return `[score:${score}] ${chunk.content}`
+            return `[score:${score}] ${replaceBaseUrl(chunk.content ?? '', context)}`
           })
           .join('\n\n---\n\n')
 

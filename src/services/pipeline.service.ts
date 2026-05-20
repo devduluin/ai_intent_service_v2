@@ -237,6 +237,9 @@ class PipelineService {
           text: enrichedUserQuery
         }, apiResults)
       
+      // Inject correct dashboard URLs (LLM sering potong URL)
+      const finalResponse = this.injectKnowledgeUrls(naturalResponse, apiResults, input)
+      
       const intentLabel = [
         ...(safePlan.handlers || []),
         ...(safePlan.tools || []),
@@ -247,7 +250,7 @@ class PipelineService {
       // STORE EPISODIC MEMORY
       // ============================================================
       const messages = ConversationUtil.buildMessages(input, {
-        memoryContext:naturalResponse
+        memoryContext: finalResponse
       })
 
       const summary = await episodicMemoryService.summarize(
@@ -266,7 +269,7 @@ class PipelineService {
         intentLabel,
         1,
         apiResults,
-        naturalResponse,
+        finalResponse,
         startTotal
       )
 
@@ -419,13 +422,14 @@ class PipelineService {
     };
     
     const naturalResponse = await this.naturalize(naturalizeInput, apiResults)
+    const finalResponse = this.injectKnowledgeUrls(naturalResponse, apiResults, naturalizeInput)
     
     // Return response yang menggabungkan kedua hasil
     return PipelineFormatter.buildSuccessMulti(
       originalPlan.tools.concat(originalPlan.knowledge).join(','),
       1,
       apiResults,
-      naturalResponse,
+      finalResponse,
       startTotal
     );
   }
@@ -768,8 +772,83 @@ class PipelineService {
   // ============================================================
   // STAGE 5 — NATURALIZATION OR PURE CHAT
   // ============================================================
+  private postProcessResponse(text: string, input: PipelineInput): string {
+    if (input.app_name !== 'hris_company') return text
+    const dashboardUrl = input.attributes?.company_dashboard_base_url as string
+      || process.env.COMPANY_DASHBOARD_URL
+      || ''
+    if (!dashboardUrl) return text
+    let result = text
+    // Handle LLM yang prepend protocol: https://{{base_url}}/...
+    result = result.replace(/https?:\/\/\{\{base_url\}\}/gi, dashboardUrl)
+    // Handle standalone placeholder: {{base_url}}/...
+    result = result.replace(/\{\{base_url\}\}/gi, dashboardUrl)
+    result = result.replace(/\{\{BASE_URL\}\}/g, dashboardUrl)
+    return result
+  }
+
+  /**
+   * Inject correct dashboard URLs into LLM response.
+   * LLMs sering memotong URL (e.g. /monitoring → /moni).
+   * Method ini mengambil URL lengkap dari hasil knowledge execution
+   * dan memastikan response menyertakan URL yang benar.
+   */
+  private injectKnowledgeUrls(response: string, apiResults: any, input: PipelineInput): string {
+    if (input.app_name !== 'hris_company') return response
+    if (!apiResults?.knowledge) return response
+
+    const dashboardUrl = input.attributes?.company_dashboard_base_url as string
+      || process.env.COMPANY_DASHBOARD_URL
+      || ''
+    if (!dashboardUrl) return response
+
+    // Extract all full URLs from knowledge contexts
+    const correctUrls: string[] = []
+    for (const key of Object.keys(apiResults.knowledge)) {
+      const val = apiResults.knowledge[key]
+      const ctx = val?.context || val?.value?.context || ''
+      if (!ctx) continue
+      // Find all http URLs in context
+      const matches = ctx.match(/https?:\/\/[^\s\n]+/g)
+      if (matches) correctUrls.push(...matches)
+    }
+
+    if (!correctUrls.length) return response
+    const uniqueUrls = [...new Set(correctUrls)]
+
+    // Check if any correct URL is missing or truncated in the response
+    const urlPrefix = dashboardUrl.replace(/\/+$/, '')
+    const responseLower = response.toLowerCase()
+
+    // For each correct URL, check if it's present in the response
+    for (const fullUrl of uniqueUrls) {
+      // Already present → skip
+      if (responseLower.includes(fullUrl.toLowerCase())) continue
+
+      // Extract path from the correct URL
+      const path = fullUrl.replace(urlPrefix, '')
+      if (!path) continue
+
+      // Check if there's a truncated version in the response
+      // e.g. response has "/attendances/moni" but should be "/dashboard/attendances/monitoring"
+      const pathLower = path.toLowerCase()
+
+      // Look for any dashboard path in response that is a truncated version
+      const responsePaths = responseLower.match(/\/dashboard\/[^\s)\]]+/g) || []
+      for (const respPath of responsePaths) {
+        // If response path is a prefix/substring of correct path and shorter → truncated
+        if (pathLower.includes(respPath) && respPath.length < pathLower.length) {
+          response = response.replace(new RegExp(respPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), path)
+          break
+        }
+      }
+    }
+
+    return response
+  }
+
   private async naturalize(input: PipelineInput, apiResult: unknown) {
-    return await naturalizationService.naturalize(
+    const response = await naturalizationService.naturalize(
       apiResult,
       input.text,
       input.attributes?.name as string,
@@ -777,6 +856,7 @@ class PipelineService {
       undefined,
       input.app_name
     )
+    return this.postProcessResponse(response, input)
   }
 
   private async handlePureChat(

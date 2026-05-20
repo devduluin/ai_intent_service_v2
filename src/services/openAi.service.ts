@@ -93,7 +93,7 @@ class OpenAiService {
       : '';
 
     const strictRule = appName === 'hris_company'
-      ? '\nPENTING: HANYA gunakan data JSON di atas. JANGAN tambahkan informasi dari luar.\n'
+      ? '\nPENTING: HANYA gunakan data JSON di atas. JANGAN tambahkan informasi dari luar.\nJika Data JSON mengandung LINK/URL → WAJIB sertakan URL tersebut PERSIS seperti di data (jangan diubah, dipotong, atau ditambahi).\n'
       : '';
     
     if (isMultiResult) {

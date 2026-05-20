@@ -79,8 +79,8 @@ class TextExtractorService {
     return text
       .replace(/\r/g, '')
       .replace(/\t/g, ' ')
-      .replace(/\s+/g, ' ')
-      .replace(/\n+/g, '\n')
+      .replace(/[^\S\n]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
       .trim()
   }
 }

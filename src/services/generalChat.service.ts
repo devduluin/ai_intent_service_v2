@@ -32,8 +32,9 @@ class GeneralChatService {
       // Pilih service berdasarkan config.default.provider
       const provider = config.default?.provider || 'ollama'
 
+      let response: string
       if (provider === 'openai') {
-        return await openAiService.chatMessage(messages, 
+        response = await openAiService.chatMessage(messages, 
           config.alibaba?.naturalModel || config.alibaba?.llmModel,
           {
             temperature: temperature,
@@ -41,7 +42,7 @@ class GeneralChatService {
           }
         )
       } else {
-        return await ollamaService.chatMessage(messages, 
+        response = await ollamaService.chatMessage(messages, 
           config.ollama.naturalModel,
           {
             temperature: temperature,
@@ -50,10 +51,27 @@ class GeneralChatService {
         )
       }
 
+      return this.postProcessResponse(response, input)
+
     } catch (err) {
       console.error('[GeneralChat] Error:', err)
       return "Maaf, saya sedang mengalami kendala teknis. Ada yang bisa saya bantu?"
     }
+  }
+
+  private postProcessResponse(text: string, input: PipelineInput): string {
+    if (input.app_name !== 'hris_company') return text
+    const dashboardUrl = input.attributes?.company_dashboard_base_url as string
+      || process.env.COMPANY_DASHBOARD_URL
+      || ''
+    if (!dashboardUrl) return text
+    let result = text
+    // Handle LLM yang prepend protocol: https://{{base_url}}/...
+    result = result.replace(/https?:\/\/\{\{base_url\}\}/gi, dashboardUrl)
+    // Handle standalone placeholder: {{base_url}}/...
+    result = result.replace(/\{\{base_url\}\}/gi, dashboardUrl)
+    result = result.replace(/\{\{BASE_URL\}\}/g, dashboardUrl)
+    return result
   }
 
   // =========================================================
@@ -121,6 +139,7 @@ ATURAN WAJIB:
 3. Jika KNOWLEDGE tidak berisi jawaban → katakan "Maaf, saya tidak memiliki informasi tentang itu."
 4. DILARANG menebak atau menambahkan informasi di luar KNOWLEDGE.
 5. Jawab dengan bahasa yang jelas, singkat, dan langsung pada poinnya.
+6. Jika KNOWLEDGE mengandung LINK/URL → WAJIB sertakan URL tersebut PERSIS seperti di data (jangan diubah, dipotong, atau ditambahi).
 `.trim()
     }
 
