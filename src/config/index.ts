@@ -8,7 +8,7 @@ export const config = {
   // Default provider: 'openai' atau 'ollama'
   default: {
     provider: process.env.DEFAULT_PROVIDER || 'ollama', // atau 'openai'
-    numPredict: parseInt(process.env.DEFAULT_NUM_PREDICTIONS ?? '256'),
+    numPredict: parseInt(process.env.DEFAULT_NUM_PREDICTIONS ?? '512'),
     temperature: parseFloat(process.env.DEFAULT_TEMPERATURE ?? '0.6'),
     systemPrompt: process.env.DEFAULT_SYSTEM_PROMPT ?? 'Kamu adalah asisten profesional milik pengguna',
   },
@@ -81,7 +81,21 @@ export const config = {
 
   rabbitmq: {
     url: process.env.RABBITMQ_URL ?? 'amqp://localhost',
-  }
+  },
+
+  minio: {
+    endPoint: process.env.MINIO_ENDPOINT ?? 'localhost',
+    port: parseInt(process.env.MINIO_PORT ?? '9000'),
+    useSSL: process.env.MINIO_USE_SSL === 'true',
+    accessKey: process.env.MINIO_ACCESS_KEY ?? '',
+    secretKey: process.env.MINIO_SECRET_KEY ?? '',
+    bucket: process.env.MINIO_BUCKET ?? 'uploads',
+    enabled: process.env.MINIO_ENABLED !== 'false',
+  },
+
+  storage: {
+    uploadDir: process.env.UPLOAD_DIR ?? './uploads',
+  },
 
 } as const
 

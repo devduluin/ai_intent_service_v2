@@ -137,9 +137,15 @@ class IntentRegistryService {
   // =========================================================
   // GET HANDLER (SAFE)
   // =========================================================
-  getHandler(key: string): ApiHandlerFn {
+  async getHandler(key: string): Promise<ApiHandlerFn> {
 
-    const handler = this.handlers.get(key)
+    const handlerKey = await intentRepository.findBySlug(key)
+
+    if (!handlerKey) {
+      throw new Error(`No handlerKey found for intent "${key}"`)
+    }
+
+    const handler = this.handlers.get(handlerKey.handlerKey ?? '')
 
     if (!handler) {
       throw new Error(`Handler "${key}" tidak ditemukan`)

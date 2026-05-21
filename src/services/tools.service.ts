@@ -71,11 +71,22 @@ getToolParams(tool: Tool): ToolParam[] {
     return result
   }
 
+  /**
+   * Get missing params for a single tool
+   */
+  getMissingParamsFromTool(
+    tool: Tool,
+    params: Record<string, unknown>
+  ): string[] {
+    const toolParams = this.getToolParams(tool);
+    return PipelineValidator.getMissingParamsFromTools(toolParams, params);
+  }
+
   async getToolsForIntent(intent: Intent): Promise<Tool[]> {
     if (!intent.tools || intent.tools.length === 0) {
       return []
     }
-    
+
     const toolSlugs = intent.tools.map(t => t.tool.slug)
     return await this.getToolsBySlugs(toolSlugs)
   }

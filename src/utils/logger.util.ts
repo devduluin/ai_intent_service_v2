@@ -33,19 +33,22 @@ const baseLogger = pino({
 export const logger = {
   // Vector Service Logger
   vector: baseLogger.child({ module: 'vector-service' }),
-  
+
   // OpenAI/Alibaba Service Logger
   embedding: baseLogger.child({ module: 'embedding-service' }),
-  
+
   // General purpose
   app: baseLogger.child({ module: 'app' }),
-  
+
   // Database Logger
   db: baseLogger.child({ module: 'database' }),
-  
+
   // HTTP Logger
   http: baseLogger.child({ module: 'http' }),
-};
+}
+
+// Export baseLogger for utilities that need it
+export { baseLogger }
 
 // ============================================================
 // Logger Interface for Consistent Logging

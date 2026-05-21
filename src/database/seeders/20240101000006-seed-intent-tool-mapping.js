@@ -44,7 +44,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'leave_allocation'),
+          intentId: getId(intents, 'leave'),
           toolId: getId(tools, 'leave_allocation_api'),
           isPrimary: true,
           priority: 1,
@@ -60,7 +60,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'get_payslip'),
+          intentId: getId(intents, 'payslip'),
           toolId: getId(tools, 'get_payslip'),
           isPrimary: true,
           priority: 1,
@@ -68,7 +68,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'claim_expense_status'),
+          intentId: getId(intents, 'claim'),
           toolId: getId(tools, 'claim_expense_status'),
           isPrimary: true,
           priority: 1,
@@ -76,7 +76,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'advance_claim_status'),
+          intentId: getId(intents, 'claim'),
           toolId: getId(tools, 'advance_claim'),
           isPrimary: true,
           priority: 1,
@@ -84,7 +84,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'advance_claim_total'),
+          intentId: getId(intents, 'claim'),
           toolId: getId(tools, 'advance_claim_total'),
           isPrimary: true,
           priority: 1,
@@ -92,7 +92,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'advance_claim_unreported'),
+          intentId: getId(intents, 'claim'),
           toolId: getId(tools, 'advance_claim_unreported'),
           isPrimary: true,
           priority: 1,
@@ -100,7 +100,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'travel_request_status'),
+          intentId: getId(intents, 'travel_request'),
           toolId: getId(tools, 'travel_request_status'),
           isPrimary: true,
           priority: 1,
@@ -108,7 +108,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'travel_request_total'),
+          intentId: getId(intents, 'travel_request'),
           toolId: getId(tools, 'travel_request_total'),
           isPrimary: true,
           priority: 1,
@@ -116,7 +116,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'travel_request_unreported'),
+          intentId: getId(intents, 'travel_request'),
           toolId: getId(tools, 'travel_request_unreported'),
           isPrimary: true,
           priority: 1,
@@ -124,7 +124,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'get_employee_detail'),
+          intentId: getId(intents, 'employee'),
           toolId: getId(tools, 'get_employee_detail'),
           isPrimary: true,
           priority: 1,
@@ -132,7 +132,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'request_wfh'),
+          intentId: getId(intents, 'attendance'),
           toolId: getId(tools, 'request_wfh'),
           isPrimary: true,
           priority: 1,
@@ -140,7 +140,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'request_tukar_shift'),
+          intentId: getId(intents, 'attendance'),
           toolId: getId(tools, 'request_tukar_shift'),
           isPrimary: true,
           priority: 1,
@@ -148,7 +148,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'request_overtime'),
+          intentId: getId(intents, 'overtime'),
           toolId: getId(tools, 'request_overtime'),
           isPrimary: true,
           priority: 1,
@@ -156,7 +156,7 @@ module.exports = {
           updatedAt: now,
         },
         {
-          intentId: getId(intents, 'get_leave_approval'),
+          intentId: getId(intents, 'leave'),
           toolId: getId(tools, 'get_leave_approval'),
           isPrimary: true,
           priority: 1,

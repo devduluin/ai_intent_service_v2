@@ -122,7 +122,12 @@ Percakapan:
 Data JSON:
 ${resultsList}
 
-Tugas: Gunakan data JSON diatas sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
+Tugas: 
+- Gunakan data JSON sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
+- Jika ADA hasil generator lampirkan downloadUrl agar user bisa langsung mengunduh hasilnya.
+- Jangan mengarang url jika tidak ada.
+- Jika data JSON berisi pesan error jangan berikan pesan error, cukup berikan pesan yang mudah dimengerti.
+- Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
 
 Tawarkan bantuan lain jika bentuknya pertanyaan.
 `.trim()
@@ -139,8 +144,12 @@ Percakapan: "${originalQuery}"
 Data JSON:
 ${JSON.stringify(apiResult, null, 2)}
 
-Tugas: Gunakan data JSON sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
-Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
+Tugas:
+- Gunakan data JSON sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
+- Jika ADA hasil generator lampirkan downloadUrl agar user bisa langsung mengunduh hasilnya.
+- Jangan mengarang url jika tidak ada.
+- Jika data JSON berisi pesan error jangan berikan pesan error, cukup berikan pesan yang mudah dimengerti.
+- Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
 
 Tawarkan bantuan lain jika bentuknya pertanyaan.
 `.trim()
@@ -308,7 +317,7 @@ Nilai:`.trim()
   // ===========================================================
   // STRICT JSON GENERATOR (FOR PLANNER / EXTRACTOR / CLASSIFIER)
   // ===========================================================
-  async generateJson(prompt: string): Promise<string> {
+  async generateJson(prompt: string, options: { temperature?: number; num_predict?: number } = {}): Promise<string> {
     console.log(`[Alibaba model generateJson]:`, config.alibaba.llmModel)
     const start = Date.now()
 
@@ -317,8 +326,9 @@ Nilai:`.trim()
       messages: [
         { role: 'user', content: prompt },
       ],
-      temperature: 0,
-      max_tokens: 64,
+      temperature: options.temperature ?? 0,
+      response_format: { type: 'json_object' },
+      max_tokens: options.num_predict ?? 120,
     })
 
     const duration = Date.now() - start

@@ -1,4 +1,4 @@
-import { PlannerOutput } from "../types"
+import { PlannerOutput } from "../types/planner.types"
 
 export interface ConfidenceDecision {
   confidence: number
@@ -14,7 +14,12 @@ class ConfidenceDecisionService {
     // ======================================================
     // 1️⃣ DETERMINISTIC HANDLER LANE (NO SCORING)
     // ======================================================
-    if (plan.handlers?.length > 0 && plan.tools.length === 0 && plan.knowledge.length === 0) {
+    const hasOnlyHandlers = 
+      plan.tasks.length > 0 && 
+      plan.tasks.every(task => task.resource === 'handler') &&
+      plan.chat === false
+
+    if (hasOnlyHandlers) {
       return {
         confidence: 0.95,
         action: 'execute_handler'
@@ -22,13 +27,13 @@ class ConfidenceDecisionService {
     }
 
     // ======================================================
-    // 2️⃣ PURE CHAT (NO PLAN)
+    // 2️⃣ PURE CHAT (NO PLAN OR chat = true)
     // ======================================================
     if (
-      plan.handlers?.length === 0 &&
-      plan.tools.length === 0 &&
-      plan.knowledge.length === 0
+      plan.tasks.length === 0 ||
+      plan.chat === true
     ) {
+      console.log('No tools/knowledge detected or chat flag is true → defaulting to chat', plan.tasks)
       return {
         confidence: 0.3,
         action: 'chat'
@@ -73,13 +78,19 @@ class ConfidenceDecisionService {
   // ======================================================
 
   private intentScore(plan: PlannerOutput): number {
-    if (plan.tools.length > 0 || plan.knowledge.length > 0) return 1
+    const hasToolsOrKnowledge = plan.tasks.some(
+      task => task.resource === 'tool' || task.resource === 'knowledge'
+    )
+    if (hasToolsOrKnowledge) return 1
     return 0.5
   }
 
   private executionScore(plan: PlannerOutput): number {
-    if (plan.tools.length > 0) return 1        // strongest signal
-    if (plan.knowledge.length > 0) return 0.75 // medium
+    const hasTools = plan.tasks.some(task => task.resource === 'tool')
+    const hasKnowledge = plan.tasks.some(task => task.resource === 'knowledge')
+    
+    if (hasTools) return 1        // strongest signal
+    if (hasKnowledge) return 0.75 // medium
     return 0.4
   }
 
@@ -99,9 +110,7 @@ class ConfidenceDecisionService {
 
   // penalize too many candidates → ambiguous intent
   private ambiguityPenalty(plan: PlannerOutput): number {
-    const totalCandidates =
-      plan.tools.length +
-      plan.knowledge.length
+    const totalCandidates = plan.tasks.length
 
     if (totalCandidates >= 4) return 0.15
     if (totalCandidates >= 2) return 0.08

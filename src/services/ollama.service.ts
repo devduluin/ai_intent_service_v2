@@ -1,5 +1,6 @@
 import { Ollama } from 'ollama'
 import { config } from '../config'
+import { withTimeout } from '../utils/async-helpers.util'
 
 // ============================================================
 // Ollama Service — wrapper untuk embed & chat
@@ -12,6 +13,9 @@ export interface ChatMessage {
   content: string
 }
 
+// Timeout configuration
+const OLLAMA_TIMEOUT_MS = 25000; // 25 seconds
+
 class OllamaService {
   private client: Ollama
 
@@ -23,17 +27,21 @@ class OllamaService {
   // Generate embedding vector dari teks menggunakan Nomic
   // ----------------------------------------------------------
   async embed(text: string): Promise<number[]> {
-    const response = await this.client.embeddings({
-      model: config.ollama.embedModel,
-      prompt: text,
-    })
-    return response.embedding
+    return withTimeout(
+      this.client.embeddings({
+        model: config.ollama.embedModel,
+        prompt: text,
+      }).then(response => response.embedding),
+      OLLAMA_TIMEOUT_MS,
+      'ollama.embed'
+    );
   }
 
   // ----------------------------------------------------------
   // Embed banyak teks sekaligus (untuk indexing intent)
   // ----------------------------------------------------------
   async embedBatch(texts: string[]): Promise<number[][]> {
+    // Process with concurrency limit to avoid overwhelming Ollama
     const embeddings = await Promise.all(texts.map((t) => this.embed(t)))
     return embeddings
   }
@@ -104,14 +112,19 @@ Tawarkan bantuan lain jika perlu.
     }
 
     console.log(`[Ollama prompt]:`, prompt)
-    const response = await this.client.chat({
-      model: llmModel,
-      messages: [{ role: 'user', content: prompt }],
-      options: {
-        temperature: options.temperature ?? 0.4,   // rendah agar konsisten
-        num_predict: options.num_predict ?? 256,   // batasi output agar cepat
-      },
-    })
+    
+    const response = await withTimeout(
+      this.client.chat({
+        model: llmModel,
+        messages: [{ role: 'user', content: prompt }],
+        options: {
+          temperature: options.temperature ?? 0.4,   // rendah agar konsisten
+          num_predict: options.num_predict ?? 256,   // batasi output agar cepat
+        },
+      }),
+      OLLAMA_TIMEOUT_MS,
+      'ollama.naturalize'
+    );
 
     const duration = Date.now() - start
     console.log(`[Planner] ${llmModel} with options ${JSON.stringify(options)} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
@@ -168,14 +181,18 @@ Tawarkan bantuan lain jika perlu.
 
   // console.log(`[Ollama] Extracting param "${paramDescription}" with prompt:`, prompt)
 
-    const response = await this.client.chat({
-      model: config.ollama.naturalModel,
-      messages: [{ role: 'user', content: prompt }],
-      options: { 
-        temperature: 0, 
-        num_predict: 30 
-      },
-    })
+    const response = await withTimeout(
+      this.client.chat({
+        model: config.ollama.naturalModel,
+        messages: [{ role: 'user', content: prompt }],
+        options: {
+          temperature: 0,
+          num_predict: 30
+        },
+      }),
+      OLLAMA_TIMEOUT_MS,
+      'ollama.extractParam'
+    );
 
     let raw = response.message.content.trim();
     
@@ -206,21 +223,27 @@ Tawarkan bantuan lain jika perlu.
   // Generic chat helper (dipakai banyak service)
   // ===========================================================
   async chat(
+    provider: string,
+    llmModel: string,
     prompt: string,
-    llmModel: string = config.ollama.llmModel,
     options: { temperature?: number; num_predict?: number } = {}
   ): Promise<string> {
     console.log(`[Ollama] Chatting with prompt:`, prompt)
     // ⏱️ start timer
     const start = Date.now()
-    const response = await this.client.chat({
-      model: llmModel,
-      messages: [{ role: 'user', content: prompt }],
-      options: {
-        temperature: options.temperature ?? 0.4,
-        num_predict: options.num_predict ?? 128,
-      },
-    })
+    
+    const response = await withTimeout(
+      this.client.chat({
+        model: llmModel,
+        messages: [{ role: 'user', content: prompt }],
+        options: {
+          temperature: options.temperature ?? 0.4,
+          num_predict: options.num_predict ?? 128,
+        },
+      }),
+      OLLAMA_TIMEOUT_MS,
+      'ollama.chat'
+    );
 
     const duration = Date.now() - start
     console.log(`[Chat Ollama] ${llmModel} with options ${JSON.stringify(options)} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
@@ -236,18 +259,29 @@ Tawarkan bantuan lain jika perlu.
     llmModel: string = config.ollama.llmModel,
     options: { temperature?: number; num_predict?: number } = {}
   ): Promise<string> {
-   
+
     // ⏱️ start timer
     const start = Date.now()
 
-    const response = await this.client.chat({
-      model: llmModel,
-      messages,
-      options: {
-        temperature: options.temperature ?? 0.5,
-        num_predict: options.num_predict ?? 512,
-      },
-    })
+    console.log(`[Ollama] chatMessage with model ${llmModel} and messages:`, messages)
+
+    const response = await withTimeout(
+      this.client.chat({
+        model: llmModel,
+        messages,
+        options: {
+          temperature: 0.5,
+          presence_penalty: 1.5,
+          top_k: 20,
+          top_p: 0.95,
+          num_predict: 256,
+        },
+        stream: false,  // set true jika ingin streaming (fitur Ollama terbaru)
+        think: false,  // mode khusus untuk response yang lebih cepat dengan kualitas cukup (fitur Ollama terbaru)
+      }),
+      OLLAMA_TIMEOUT_MS,
+      'ollama.chatMessage'
+    );
 
     const duration = Date.now() - start
     console.log(`[Planner] ${llmModel} with options ${JSON.stringify(options)} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)

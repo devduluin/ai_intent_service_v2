@@ -49,7 +49,7 @@ class GeneralChatService {
         )
       } else {
         return await ollamaService.chatMessage(messages, 
-          config.ollama.naturalModel,
+          config.ollama.llmModel,
           {
             temperature: temperature,
             num_predict: numPredict,

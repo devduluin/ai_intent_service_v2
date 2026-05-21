@@ -2,7 +2,8 @@ import { openAiService } from './openAi.service';
 import { episodicMemoryRepository } from '../repositories/episodic-memory.repository';
 import { globalCache } from '../utils/cache-helper.util';
 import { openAiService as alibabaService } from './openAi.service';
-import type { Intent, PlannerOutput, ChatMessage } from '../types';
+import type { Intent, ChatMessage, RecentPlannerInput } from '../types';
+import type { PlannerOutput } from '../types/planner.types';
 import type { Agent } from '../types/agent.types';
 import type { EpisodicMemory } from '../types/episodic-memory.types';
 import { config } from '../config';
@@ -236,7 +237,7 @@ class EpisodicMemoryService {
       const prompt = `
 ROLE: AI Memory Assistant.
 
-Ringkas percakapan berikut menjadi 1 kalimat singkat (max 50 kata).
+Ringkas percakapan berikut menjadi 2 kalimat singkat (max 100 kata).
 Fokus pada:
 - tujuan user
 - info penting user
@@ -410,13 +411,13 @@ Pesan saat ini:
         app
       );
 
-      appLogger.debug('Tool usage hints retrieved', {
-        userId,
-        appName: app,
-        toolsCount: merged.tools?.length || 0,
-        handlersCount: merged.handlers?.length || 0,
-        knowledgeCount: merged.knowledge?.length || 0
-      });
+      // appLogger.debug('Tool usage hints retrieved', {
+      //   userId,
+      //   appName: app,
+      //   toolsCount: merged.tools?.length || 0,
+      //   handlersCount: merged.handlers?.length || 0,
+      //   knowledgeCount: merged.knowledge?.length || 0
+      // });
 
       return merged;
     } catch (error) {
@@ -428,9 +429,8 @@ Pesan saat ini:
 
       // Return empty planner on error
       return {
-        handlers: [],
-        tools: [],
-        knowledge: [],
+        mode: "single_step",
+        tasks: [],
         chat: false,
       };
     }

@@ -1,7 +1,8 @@
 import { intentRegistry } from '../services/intent-registry.service'
 // import { weatherIntent, handleGetWeather } from './weather.intent'
 // Import intent baru di sini ↓
-import { handleGreeting } from './greeting.intent'
+import { handleGreeting, greetingHandlerKey } from './greeting.intent'
+import { handleGenerateXls, xlsHandlerKey } from './xls.intent'
 // import { productIntent, handleProduct } from './product.intent'
 
 // ============================================================
@@ -10,7 +11,8 @@ import { handleGreeting } from './greeting.intent'
 export async function registerAllIntents(): Promise<void> {
 
   // 1. register handler CODE FIRST
-  intentRegistry.registerHandler('handleGreeting', handleGreeting)
+  intentRegistry.registerHandler(greetingHandlerKey, handleGreeting)
+  intentRegistry.registerHandler(xlsHandlerKey, handleGenerateXls)
 
   // 2. sync DB INTENTS
   await intentRegistry.syncFromDatabase();

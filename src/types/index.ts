@@ -1,4 +1,5 @@
 import type { Agent } from './agent.types'
+import type { PlannerOutput } from './planner.types'
 // ============================================================
 // Core Types
 // ============================================================
@@ -119,24 +120,43 @@ export interface IntentMatch {
 export interface PlannerInput {
   userText: string
   candidates: {
+    handlers: string[]       // slug only (backward compatibility)
     tools: string[]           // slug only (backward compatibility)
-    knowledge: string[]       // slug only (backward compatibility)
+    knowledge: string[]  
+    handlerDetails?: any[]     // slug only (backward compatibility)
     toolsDetails?: any[]      // full intent objects for tools
     knowledgeDetails?: any[]  // full intent objects for knowledge
   }
-  recentUsage?: PlannerOutput
+  recentUsage?: RecentPlannerInput
   language?: string
 }
 
-export interface PlannerOutput {
-  handlers: string[];
-  tools: string[];
-  knowledge: string[];
+// export interface PlannerOutput {
+//   handlers?: string[];
+//   tools?: string[];
+//   knowledge?: string[];
+//   execution_order?: string[];
+//   chat: boolean;
+
+//   confidence?: number
+//   shouldClarify?: boolean
+//   reasoning?: string
+
+//   // NEW: Multi-step task planning format
+//   mode?: "single_step" | "multi_step"
+//   tasks?: Array<{
+//     id: string
+//     resource: "tool" | "handler" | "knowledge"
+//     key: string
+//     depends_on: string[]
+//   }>
+// }
+
+export interface RecentPlannerInput {
+  handlers?: string[];
+  tools?: string[];
+  knowledge?: string[];
   chat: boolean;
-  
-  confidence?: number
-  shouldClarify?: boolean
-  reasoning?: string
 }
 
 // ============================================================
@@ -152,6 +172,15 @@ export type ChatMessage = {
 // INPUT dari Chat Service → AI Intent Service
 // ============================================================
 
+export interface TemporalContext {
+  type: 'day' | 'week' | 'month' | 'year' | 'quarter' | 'period' | 'date' | 'relative'
+  value: string           // Original text (e.g., "bulan lalu")
+  resolvedValue: string   // Exact value (e.g., "April 2026")
+  startDate?: string      // ISO date string
+  endDate?: string        // ISO date string
+  direction: 'current' | 'past' | 'future'
+}
+
 export type PipelineInput = {
   user_id: string
   app_name: string
@@ -159,6 +188,8 @@ export type PipelineInput = {
   text: string
   chat_history?: ChatMessage[],
   attributes?: Record<string, unknown>
+  temporalContext?: TemporalContext[]  // Extracted temporal expressions with resolved dates
+  entityContext?: string[]              // Extracted entities (locations, names, etc.)
 }
 
 // ============================================================

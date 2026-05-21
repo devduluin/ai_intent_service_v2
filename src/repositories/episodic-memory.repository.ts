@@ -2,7 +2,7 @@
 import { Op } from 'sequelize';
 import { EpisodicMemoryModel } from '../database/models/episodic-memory.model';
 import type { EpisodicMemory } from '../types/episodic-memory.types';
-import type { PlannerOutput } from '../types';
+import type { PlannerOutput } from '../types/planner.types';
 
 export class EpisodicMemoryRepository {
   /**
@@ -262,37 +262,48 @@ export class EpisodicMemoryRepository {
       attributes: ['toolsUsed'],
     });
 
-    const merged: PlannerOutput = {
-      handlers: [],
-      tools: [],
-      knowledge: [],
-      chat: false,
-    };
+    const allTasks: Array<{
+      id: string;
+      resource: 'tool' | 'handler' | 'knowledge';
+      key: string;
+      depends_on: string[];
+    }> = [];
+
+    let hasChat = false;
+    let taskIdCounter = 1;
 
     for (const memory of memories) {
       const plan = memory.toolsUsed as PlannerOutput | null;
       if (!plan) continue;
 
-      if (plan.handlers?.length) {
-        merged.handlers.push(...plan.handlers);
+      // Collect tasks from plan
+      if (plan.tasks && plan.tasks.length > 0) {
+        plan.tasks.forEach(task => {
+          allTasks.push({
+            id: String(taskIdCounter++),
+            resource: task.resource,
+            key: task.key,
+            depends_on: task.depends_on || []
+          });
+        });
       }
-      if (plan.tools?.length) {
-        merged.tools.push(...plan.tools);
-      }
-      if (plan.knowledge?.length) {
-        merged.knowledge.push(...plan.knowledge);
-      }
+
       if (plan.chat === true) {
-        merged.chat = true;
+        hasChat = true;
       }
     }
 
-    // Remove duplicates
-    merged.handlers = [...new Set(merged.handlers)];
-    merged.tools = [...new Set(merged.tools)];
-    merged.knowledge = [...new Set(merged.knowledge)];
+    // Remove duplicate tasks by key
+    const uniqueTasks = allTasks.filter((task, index, self) =>
+      index === self.findIndex(t => t.key === task.key && t.resource === task.resource)
+    );
 
-    return merged;
+    return {
+      mode: uniqueTasks.length > 1 ? 'multi_step' : 'single_step',
+      chat: hasChat && uniqueTasks.length === 0,
+      tasks: uniqueTasks,
+      meta: undefined
+    };
   }
 
   /**

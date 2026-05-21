@@ -16,14 +16,16 @@ class ClarificationService {
       const response = await openAiService.chat(provider, llmModel,
          prompt,
         {
-          temperature: 0.4,
+          temperature: 0.2,
           num_predict: options?.num_predict ?? 64,
         }
       )
       return response.trim()
     } else {
-      const response = await ollamaService.chat(prompt, 
-        config.ollama?.llmModel,
+      const response = await ollamaService.chat(
+        provider,
+        llmModel,
+        prompt,
         {
           temperature: 0.4,
           num_predict: options?.num_predict ?? 64,

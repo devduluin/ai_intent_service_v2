@@ -602,12 +602,6 @@ class VectorService {
         return [];
       }
 
-      // vectorLogger.debug('Querying vector DB', {
-      //   agentId,
-      //   topK,
-      //   queryEmbeddingLength: queryEmbedding.length,
-      // });
-
       // Query with retry and timeout
       const results = await withTimeout(
         withRetry(
@@ -633,10 +627,16 @@ class VectorService {
         return [];
       }
 
-      // Process results
-      const matches: IntentMatch[] = [];
-      const seen = new Set<string>();
-      const similarityThreshold = config.intent.similarityThreshold;
+      // Process results - DOMAIN CAPABILITY MATCHING
+      // Instead of intent matching (1 best match), we use domain capability matching
+      // Multiple matches for same domain = stronger capability signal
+      const domainMatches = new Map<string, { 
+        intent: Intent; 
+        scores: number[]; 
+        matchCount: number;
+        examples: string[];
+      }>();
+      const similarityThreshold = config.intent.similarityThreshold * 0.85; // Lower threshold for capability detection
 
       for (let i = 0; i < results.metadatas[0].length; i++) {
         const meta = results.metadatas[0][i] as {
@@ -649,22 +649,16 @@ class VectorService {
         const distance = results.distances?.[0]?.[i] ?? 1;
         const score = 1 - distance;
 
-        // Filter by threshold
+        // Lower threshold - we want to detect capability, not exact intent
         if (score < similarityThreshold) {
-          // vectorLogger.debug('Match below threshold', {
-          //   intentId: meta.intentId,
-          //   intentSlug: meta.intentSlug,
-          //   score,
-          //   threshold: similarityThreshold,
-          // });
+          vectorLogger.debug('Capability match below threshold', {
+            intentId: meta.intentId,
+            intentSlug: meta.intentSlug,
+            score,
+            threshold: similarityThreshold,
+          });
           continue;
         }
-
-        // Deduplicate
-        if (seen.has(meta.intentId)) {
-          continue;
-        }
-        seen.add(meta.intentId);
 
         // Find matching intent
         const intent = intents.find((i) => i.id === meta.intentId);
@@ -675,9 +669,55 @@ class VectorService {
           continue;
         }
 
+        // Aggregate by intent slug (domain capability)
+        const slug = intent.slug;
+        const existing = domainMatches.get(slug);
+        
+        if (existing) {
+          // Add to existing domain capability
+          existing.scores.push(score);
+          existing.matchCount++;
+          if (meta.intentName) {
+            existing.examples.push(meta.intentName);
+          }
+        } else {
+          // New domain capability
+          domainMatches.set(slug, {
+            intent,
+            scores: [score],
+            matchCount: 1,
+            examples: meta.intentName ? [meta.intentName] : []
+          });
+        }
+      }
+
+      // Calculate final scores based on domain capability
+      // More matches = stronger capability = higher confidence
+      const matches: IntentMatch[] = [];
+      
+      for (const [slug, data] of domainMatches.entries()) {
+        // Calculate aggregate score
+        const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+        const maxScore = Math.max(...data.scores);
+        
+        // Capability boost: more examples = higher confidence
+        // 1 match: 1.0x, 2 matches: 1.1x, 3 matches: 1.2x, 4+ matches: 1.3x
+        const capabilityMultiplier = Math.min(1.0 + (data.matchCount - 1) * 0.1, 1.3);
+        const boostedScore = Math.min(avgScore * capabilityMultiplier, 1.0);
+        
+        vectorLogger.debug('Domain capability detected', {
+          slug,
+          matchCount: data.matchCount,
+          avgScore,
+          maxScore,
+          boostedScore,
+          capabilityMultiplier,
+          examples: data.examples.slice(0, 3)
+        });
+
         matches.push({
-          intent,
-          score,
+          intent: data.intent,
+          score: boostedScore,
         });
       }
 
@@ -688,18 +728,24 @@ class VectorService {
       this.metrics.successfulQueries++;
       this.updateAverageQueryTime(duration);
 
-      vectorLogger.info('Intent matching completed', {
+      vectorLogger.info('Domain capability matching completed', {
         agentId,
         matchCount: matches.length,
         topScore: matches[0]?.score ?? 0,
         durationMs: duration,
+        capabilityDetection: matches.map(m => ({
+          slug: m.intent.slug,
+          score: m.score,
+          domain: m.intent.slug
+        }))
       });
 
       // Log metrics
       if (matches.length > 0) {
-        vectorLogger.metric('intent_match_score', matches[0].score, '', {
+        vectorLogger.metric('domain_capability_score', matches[0].score, '', {
           agentId,
           intentId: matches[0].intent.id,
+          intentSlug: matches[0].intent.slug,
         });
       }
 

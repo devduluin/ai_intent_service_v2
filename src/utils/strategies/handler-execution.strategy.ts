@@ -1,5 +1,5 @@
 // strategies/handler-execution.strategy.ts
-import { PipelineInput, Tool } from "../../types";
+import { PipelineInput } from "../../types";
 import { ExecutionStrategy } from '../../types/execution.types';
 import { intentRegistry } from '../../services/intent-registry.service';
 
@@ -9,13 +9,13 @@ export class HandlerExecutionStrategy implements ExecutionStrategy {
       params: Record<string, any>,
       context: PipelineInput
     ): Promise<Record<string, unknown>> {
-      console.log(`[ExecuteHandlersWithContext] Executing ${handlers.length} handler(s)`)
-      console.log(`[ExecuteHandlersWithContext] handler(s)`, handlers)
+      // console.log(`[ExecuteHandlersWithContext] Executing ${handlers.length} handler(s)`)
+      console.log(`[ExecuteHandlersWithContext] params(s)`, params)
   
       const handlerPromises = handlers.map(async (handler) => {
         try {
           // const result = await executionContext.run("handler", {handlerKey: handler}, {}, context)
-          const handlerAction = intentRegistry.getHandler(handler);
+          const handlerAction = await intentRegistry.getHandler(handler);
           const result = await handlerAction(params, context);
           return {
             slug: handler,

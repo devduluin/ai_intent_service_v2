@@ -50,7 +50,7 @@ class NaturalizationService {
         customPrompt,
         llmModel,
         {
-          temperature: temperature || 0.6,
+          temperature: temperature || 0.4,
           num_predict: config.default?.numPredict,
         }
       )

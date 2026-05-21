@@ -13,7 +13,7 @@ module.exports = {
       {
         name: 'Weather API',
         slug: 'get_weather',
-        description: 'Gunakan API ini untuk mendapatkan cuaca',
+        description: 'Gunakan Tools ini untuk mendapatkan informasi cuaca',
         method: 'GET',
         url: 'https://api.openweathermap.org/data/2.5/weather?q={city}&appid=a4a3c3f31f794e6c47a505350f5ad847&units=metric',
         authType: 'none',
@@ -38,7 +38,7 @@ module.exports = {
       {
         name: 'World Time API',
         slug: 'get_time',
-        description: 'Gunakan API ini untuk mendapatkan cuaca',
+        description: 'Gunakan Tools ini untuk mendapatkan informasi waktu',
         method: 'GET',
         url: 'https://timeapi.io/api/v1/time/current/zone?timezone={timezone}',
         authType: 'none',
@@ -57,7 +57,7 @@ module.exports = {
       {
         name: 'Checkin Trouble API',
         slug: 'checkin_trouble',
-        description: 'Gunakan API ini untuk mendapatkan informasi checkin trouble',
+        description: 'Gunakan Tools ini untuk kendala absensi atau checkin/checkout trouble',
         method: 'GET',
         url: `${attendanceBaseUrl}/ai/attendance/checkin-troubleshooting?employee_id={employee_id}`,
         authType: 'none',
@@ -82,7 +82,7 @@ module.exports = {
       {
         name: 'Leave Allocation API',
         slug: 'leave_allocation_api',
-        description: 'Gunakan API ini untuk mendapatkan informasi leave allocation',
+        description: 'Gunakan Tools ini untuk mendapatkan informasi leave allocation',
         method: 'GET',
         url: `${attendanceBaseUrl}/ai/attendance/leave-allocation?employee_id={employee_id}`,
         authType: 'none',
@@ -107,7 +107,7 @@ module.exports = {
       {
         name: 'Get Shift API',
         slug: 'get_shift',
-        description: 'Gunakan API ini untuk mendapatkan informasi jadwal atau shift',
+        description: 'Gunakan Tools ini untuk mendapatkan informasi jadwal atau shift kerja',
         method: 'GET',
         url: `${attendanceBaseUrl}/ai/attendance/get-shift?employee_id={employee_id}`,
         authType: 'none',
@@ -135,7 +135,7 @@ module.exports = {
       {
         name: 'Get Payslip API',
         slug: 'get_payslip',
-        description: 'Gunakan API ini untuk mendapatkan informasi payslip',
+        description: 'Gunakan Tools ini untuk mendapatkan informasi gaji atau payslip',
         method: 'GET',
         url: `${payrollBaseUrl}/ai/payroll/payslip?employee_id={employee_id}`,
         authType: 'none',
@@ -160,7 +160,7 @@ module.exports = {
       {
         name: 'Claim expense status API',
         slug: 'claim_expense_status',
-        description: 'Gunakan API ini untuk mendapatkan informasi claim expense status',
+        description: 'Gunakan Tools ini untuk mendapatkan status claim expense status',
         method: 'GET',
         url: `${payrollBaseUrl}/ai/claims/claim-expense-status?employee_id={employee_id}`,
         authType: 'none',
@@ -185,7 +185,7 @@ module.exports = {
       {
         name: 'Advance claim API',
         slug: 'advance_claim',
-        description: 'Gunakan API ini untuk mendapatkan informasi advance claim',
+        description: 'Gunakan Tools ini untuk mendapatkan status dana talangan atau advance claim',
         method: 'GET',
         url: `${payrollBaseUrl}/ai/claims/advance-claim-status?employee_id={employee_id}`,
         authType: 'none',
@@ -210,7 +210,7 @@ module.exports = {
       {
         name: 'Advance claim API total',
         slug: 'advance_claim_total',
-        description: 'Gunakan API ini untuk mendapatkan informasi advance claim total',
+        description: 'Gunakan Tools ini untuk mendapatkan total dana talangan atau advance claim',
         method: 'GET',
         url: `${payrollBaseUrl}/ai/claims/advance-claim-total?employee_id={employee_id}`,
         authType: 'none',
@@ -235,7 +235,7 @@ module.exports = {
       {
         name: 'Advance claim API unreported',
         slug: 'advance_claim_unreported',
-        description: 'Gunakan API ini untuk mendapatkan informasi advance claim unreported',
+        description: 'Gunakan Tools ini untuk mendapatkan informasi advance claim unreported',
         method: 'GET',
         url: `${payrollBaseUrl}/ai/claims/advance-claim-unreported?employee_id={employee_id}`,
         authType: 'none',
@@ -260,7 +260,7 @@ module.exports = {
       {
         name: 'Travel request API status',
         slug: 'travel_request_status',
-        description: 'Gunakan API ini untuk mendapatkan informasi travel request status',
+        description: 'Gunakan Tools ini untuk mendapatkan status travel request',
         method: 'GET',
         url: `${payrollBaseUrl}/ai/claims/travel-request-status?employee_id={employee_id}`,
         authType: 'none',
@@ -285,7 +285,7 @@ module.exports = {
       {
         name: 'Travel request API total',
         slug: 'travel_request_total',
-        description: 'Gunakan API ini untuk mendapatkan informasi travel request total',
+        description: 'Gunakan Tools ini untuk mendapatkan total travel request',
         method: 'GET',
         url: `${payrollBaseUrl}/ai/claims/travel-request-total?employee_id={employee_id}`,
         authType: 'none',
@@ -310,7 +310,7 @@ module.exports = {
       {
         name: 'Travel request API unreported',
         slug: 'travel_request_unreported',
-        description: 'Gunakan API ini untuk mendapatkan informasi travel request unreported',
+        description: 'Gunakan Tools ini untuk mendapatkan informasi travel request unreported',
         method: 'GET',
         url: `${payrollBaseUrl}/ai/claims/travel-request-unreported?employee_id={employee_id}`,
         authType: 'none',
@@ -335,7 +335,7 @@ module.exports = {
       {
         name: 'Get employee detail',
         slug: 'get_employee_detail',
-        description: 'Gunakan API ini untuk mendapatkan informasi employee detail',
+        description: 'Gunakan Tools ini untuk mendapatkan informasi detail karyawan',
         method: 'GET',
         url: `${employeeBaseUrl}/ai/employee-detail?employee_id={employee_id}`,
         authType: 'none',
@@ -360,7 +360,7 @@ module.exports = {
       {
         name: 'Get WFH request status',
         slug: 'request_wfh',
-        description: 'Gunakan API ini untuk mendapatkan informasi WFH request status',
+        description: 'Gunakan Tools ini untuk mendapatkan status pengajuan WFH',
         method: 'GET',
         url: `${attendanceBaseUrl}/ai/attendance/attendance-request-wfh?employee_id={employee_id}`,
         authType: 'none',
@@ -385,7 +385,7 @@ module.exports = {
       {
         name: 'Get tukar shift status',
         slug: 'request_tukar_shift',
-        description: 'Gunakan API ini untuk mendapatkan informasi tukar shift status',
+        description: 'Gunakan Tools ini untuk mendapatkan informasi tukar shift status',
         method: 'GET',
         url: `${attendanceBaseUrl}/ai/attendance/attendance-request-tukar-shift?employee_id={employee_id}`,
         authType: 'none',
@@ -410,7 +410,7 @@ module.exports = {
       {
         name: 'Get overtime request status',
         slug: 'request_overtime',
-        description: 'Gunakan API ini untuk mendapatkan informasi overtime request status',
+        description: 'Gunakan Tools ini untuk mendapatkan status pengajuan lembur atau overtime',
         method: 'GET',
         url: `${attendanceBaseUrl}/ai/attendance/attendance-request-overtime?employee_id={employee_id}`,
         authType: 'none',
@@ -435,7 +435,7 @@ module.exports = {
       {
         name: 'Get leave approval status',
         slug: 'get_leave_approval',
-        description: 'Gunakan API ini untuk mendapatkan informasi leave approval',
+        description: 'Gunakan Tools ini untuk mendapatkan status pengajuan leave',
         method: 'GET',
         url: `${attendanceBaseUrl}/ai/attendance/leave-approval?employee_id={employee_id}`,
         authType: 'none',

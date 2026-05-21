@@ -38,12 +38,35 @@ export class IntentRepository {
     return rows.map((row) => this.toIntent(row))
   }
 
+  async findHandlersActive({ agentId = null }: { agentId?: string | null }): Promise<Intent[]> {
+    const whereClause: any = { isActive: true, executionType: 'handler' }
+
+    if (agentId !== null && agentId !== undefined) {
+      whereClause.agentId = agentId
+    }
+
+    const rows = await IntentModel.findAll({
+      where: whereClause,
+      include: this.getFullInclude(),
+      order: [['id', 'ASC']],
+    })
+
+    return rows.map((row) => this.toIntent(row))
+  }
+
   // ============================================================
   // FIND BY SLUG
   // ============================================================
-  async findBySlug(slug: string, agentId: string): Promise<Intent | null> {
+  async findBySlug(slug: string, agentId?: string): Promise<Intent | null> {
+
+    let whereClause: any = { slug, isActive: true }
+
+    if (agentId !== null && agentId !== undefined) {
+      whereClause.agentId = agentId
+    }
+    
     const row = await IntentModel.findOne({
-      where: { slug, agentId, isActive: true },
+      where: whereClause,
       include: this.getFullInclude(),
     })
 

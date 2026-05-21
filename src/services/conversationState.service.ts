@@ -1,8 +1,11 @@
 import type { PendingIntentState } from '../types'
+import { executeWithLock } from '../utils/distributed-lock.util'
+import { appLogger } from '../utils/logger.util'
 
 const TTL_MS = 1000 * 60 * 5 // 5 minutes
 const MAX_RETRY_DEFAULT = 2
 const STATE_VERSION = 2
+const LOCK_TTL_MS = 5000 // 5 seconds lock timeout
 
 class ConversationStateService {
   private store = new Map<string, PendingIntentState>()
@@ -11,57 +14,85 @@ class ConversationStateService {
     return `${app}:${userId}`
   }
 
-  // =========================================================
-  // CREATE/UPDATE STATE
-  // =========================================================
-  set(userId: string, app: string, state: Partial<PendingIntentState>) {
-    const now = Date.now()
-
-    if (!state.intentSlug && !state.intentSlugs) {
-      console.error("[State] Cannot store state without intent slug(s)")
-      return
-    }
-
-    const isMultiIntent = Boolean(state.intentSlugs?.length)
-
-    let missingToolsParams = state.missingToolsParams
-    
-    if (!missingToolsParams && state.missingParamsMap) {
-      missingToolsParams = state.missingParamsMap.map(item => ({
-        toolSlug: item.intentSlug,
-        toolName: item.toolName || item.intentSlug,
-        missing: item.missing
-      }))
-    }
-
-    const fullState: PendingIntentState = {
-      userId,
-      appName: app,
-      isMultiIntent,
-      version: STATE_VERSION,
-      intentSlug: state.intentSlug,
-      intentSlugs: state.intentSlugs,
-      collectedParams: state.collectedParams ?? {},
-      missingToolsParams,
-      originalPlan: state.originalPlan,
-      retryCount: 0,
-      maxRetry: state.maxRetry ?? MAX_RETRY_DEFAULT,
-      createdAt: now,
-      updatedAt: now,
-      expiresAt: now + TTL_MS,
-      lastUserMessage: state.lastUserMessage,
-    }
-
-    this.store.set(this.key(userId, app), fullState)
-    console.log("[State] Saved:", {
-      intentSlugs: fullState.intentSlugs,
-      missingToolsParams: fullState.missingToolsParams?.length,
-      hasOriginalPlan: !!fullState.originalPlan
-    })
+  private lockKey(userId: string, app: string) {
+    return `conversation:${app}:${userId}`
   }
 
   // =========================================================
-  // GET STATE (with TTL)
+  // CREATE/UPDATE STATE (WITH LOCK)
+  // =========================================================
+  async set(userId: string, app: string, state: Partial<PendingIntentState>) {
+    try {
+      await executeWithLock(
+        this.lockKey(userId, app),
+        async () => {
+          const now = Date.now()
+
+          if (!state.intentSlug && !state.intentSlugs) {
+            appLogger.warn("[State] Cannot store state without intent slug(s)", {
+              userId,
+              appName: app
+            })
+            return
+          }
+
+          const isMultiIntent = Boolean(state.intentSlugs?.length)
+
+          let missingToolsParams = state.missingToolsParams
+
+          if (!missingToolsParams && state.missingParamsMap) {
+            missingToolsParams = state.missingParamsMap.map(item => ({
+              toolSlug: item.intentSlug,
+              toolName: item.toolName || item.intentSlug,
+              missing: item.missing
+            }))
+          }
+
+          const fullState: PendingIntentState = {
+            userId,
+            appName: app,
+            isMultiIntent,
+            version: STATE_VERSION,
+            intentSlug: state.intentSlug,
+            intentSlugs: state.intentSlugs,
+            collectedParams: state.collectedParams ?? {},
+            missingToolsParams,
+            originalPlan: state.originalPlan,
+            retryCount: 0,
+            maxRetry: state.maxRetry ?? MAX_RETRY_DEFAULT,
+            createdAt: now,
+            updatedAt: now,
+            expiresAt: now + TTL_MS,
+            lastUserMessage: state.lastUserMessage,
+          }
+
+          this.store.set(this.key(userId, app), fullState)
+          appLogger.debug("[State] Saved:", {
+            userId,
+            appName: app,
+            intentSlugs: fullState.intentSlugs,
+            missingToolsParams: fullState.missingToolsParams?.length,
+            hasOriginalPlan: !!fullState.originalPlan
+          })
+        },
+        {
+          ttlMs: LOCK_TTL_MS,
+          retryDelayMs: 50,
+          maxRetries: 100
+        }
+      )
+    } catch (error) {
+      appLogger.error("[State] Failed to set state (lock acquisition failed)", {
+        userId,
+        appName: app,
+        error: error instanceof Error ? error.message : error
+      })
+      throw new Error(`Conversation state lock failed for user ${userId}`)
+    }
+  }
+
+  // =========================================================
+  // GET STATE (with TTL) - NO LOCK NEEDED FOR READS
   // =========================================================
   get(userId: string, app: string): PendingIntentState | null {
     const key = this.key(userId, app)
@@ -71,20 +102,31 @@ class ConversationStateService {
 
     // Version guard - handle migration
     if (state.version !== STATE_VERSION) {
-      console.log("[State] Version mismatch, attempting migration")
+      appLogger.debug("[State] Version mismatch, attempting migration", {
+        userId,
+        appName: app,
+        currentVersion: state.version
+      })
       const migrated = this.migrateState(state)
       if (migrated) {
         this.store.set(key, migrated)
         return migrated
       }
-      console.warn("[State] Migration failed, clearing")
+      appLogger.warn("[State] Migration failed, clearing", {
+        userId,
+        appName: app
+      })
       this.clear(userId, app)
       return null
     }
 
     // TTL guard
     if (Date.now() > state.expiresAt) {
-      console.log("[State] Expired → clearing")
+      appLogger.debug("[State] Expired → clearing", {
+        userId,
+        appName: app,
+        expiredAt: new Date(state.expiresAt).toISOString()
+      })
       this.clear(userId, app)
       return null
     }
@@ -128,60 +170,153 @@ class ConversationStateService {
   }
 
   // =========================================================
-  // UPDATE PARTIAL STATE
+  // UPDATE PARTIAL STATE (WITH LOCK)
   // =========================================================
-  update(userId: string, app: string, patch: Partial<PendingIntentState>) {
-    const current = this.get(userId, app)
-    if (!current) return
+  async update(userId: string, app: string, patch: Partial<PendingIntentState>) {
+    try {
+      await executeWithLock(
+        this.lockKey(userId, app),
+        async () => {
+          const current = this.get(userId, app)
+          if (!current) {
+            appLogger.warn("[State] Cannot update non-existent state", {
+              userId,
+              appName: app
+            })
+            return
+          }
 
-    let mergedMissingToolsParams = current.missingToolsParams
-    if (patch.missingToolsParams) {
-      mergedMissingToolsParams = patch.missingToolsParams
+          let mergedMissingToolsParams = current.missingToolsParams
+          if (patch.missingToolsParams) {
+            mergedMissingToolsParams = patch.missingToolsParams
+          }
+
+          const updated: PendingIntentState = {
+            ...current,
+            ...patch,
+            missingToolsParams: mergedMissingToolsParams,
+            originalPlan: patch.originalPlan ?? current.originalPlan,
+            updatedAt: Date.now(),
+            expiresAt: Date.now() + TTL_MS
+          }
+
+          this.store.set(this.key(userId, app), updated)
+          appLogger.debug("[State] Updated:", {
+            userId,
+            appName: app,
+            intentSlugs: updated.intentSlugs,
+            missingToolsParams: updated.missingToolsParams?.length,
+            hasOriginalPlan: !!updated.originalPlan
+          })
+        },
+        {
+          ttlMs: LOCK_TTL_MS,
+          retryDelayMs: 50,
+          maxRetries: 100
+        }
+      )
+    } catch (error) {
+      appLogger.error("[State] Failed to update state (lock acquisition failed)", {
+        userId,
+        appName: app,
+        error: error instanceof Error ? error.message : error
+      })
+      throw new Error(`Conversation state update lock failed for user ${userId}`)
     }
-
-    const updated: PendingIntentState = {
-      ...current,
-      ...patch,
-      missingToolsParams: mergedMissingToolsParams,
-      originalPlan: patch.originalPlan ?? current.originalPlan,
-      updatedAt: Date.now(),
-      expiresAt: Date.now() + TTL_MS
-    }
-
-    this.store.set(this.key(userId, app), updated)
-    console.log("[State] Updated:", {
-      intentSlugs: updated.intentSlugs,
-      missingToolsParams: updated.missingToolsParams?.length,
-      hasOriginalPlan: !!updated.originalPlan
-    })
   }
 
   // =========================================================
-  // RETRY HANDLING
+  // RETRY HANDLING (WITH LOCK)
   // =========================================================
-  incrementRetry(userId: string, app: string): boolean {
-    const state = this.get(userId, app)
-    if (!state) return false
+  async incrementRetry(userId: string, app: string): Promise<boolean> {
+    try {
+      let success = false;
 
-    const nextRetry = state.retryCount + 1
+      await executeWithLock(
+        this.lockKey(userId, app),
+        async () => {
+          const state = this.get(userId, app)
+          if (!state) {
+            appLogger.warn("[State] Cannot increment retry for non-existent state", {
+              userId,
+              appName: app
+            })
+            return
+          }
 
-    if (nextRetry >= state.maxRetry) {
-      console.log("[State] Retry limit reached → clearing")
-      this.clear(userId, app)
+          const nextRetry = state.retryCount + 1
+
+          if (nextRetry >= state.maxRetry) {
+            appLogger.info("[State] Retry limit reached → clearing", {
+              userId,
+              appName: app,
+              retryCount: nextRetry,
+              maxRetry: state.maxRetry
+            })
+            this.clear(userId, app)
+            return
+          }
+
+          this.store.set(this.key(userId, app), {
+            ...state,
+            retryCount: nextRetry,
+            updatedAt: Date.now()
+          })
+
+          appLogger.debug(`[State] Retry increment → ${nextRetry}`, {
+            userId,
+            appName: app
+          })
+
+          success = true;
+        },
+        {
+          ttlMs: LOCK_TTL_MS,
+          retryDelayMs: 50,
+          maxRetries: 100
+        }
+      )
+
+      return success;
+    } catch (error) {
+      appLogger.error("[State] Failed to increment retry (lock acquisition failed)", {
+        userId,
+        appName: app,
+        error: error instanceof Error ? error.message : error
+      })
       return false
     }
-
-    this.update(userId, app, { retryCount: nextRetry })
-    console.log(`[State] Retry increment → ${nextRetry}`)
-    return true
   }
 
   // =========================================================
-  // CLEAR STATE
+  // CLEAR STATE (WITH LOCK)
   // =========================================================
-  clear(userId: string, app: string) {
-    this.store.delete(this.key(userId, app))
-    console.log("[State] Cleared")
+  async clear(userId: string, app: string) {
+    try {
+      await executeWithLock(
+        this.lockKey(userId, app),
+        async () => {
+          this.store.delete(this.key(userId, app))
+          appLogger.debug("[State] Cleared", {
+            userId,
+            appName: app
+          })
+        },
+        {
+          ttlMs: LOCK_TTL_MS,
+          retryDelayMs: 50,
+          maxRetries: 10
+        }
+      )
+    } catch (error) {
+      appLogger.error("[State] Failed to clear state (lock acquisition failed)", {
+        userId,
+        appName: app,
+        error: error instanceof Error ? error.message : error
+      })
+      // Still delete even if lock fails (best effort)
+      this.store.delete(this.key(userId, app))
+    }
   }
 }
 

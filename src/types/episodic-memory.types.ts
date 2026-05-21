@@ -1,4 +1,4 @@
-import type { PlannerOutput } from '../types'
+import type { PlannerOutput } from './planner.types'
 
 export type EpisodicMemory = {
   id: string
