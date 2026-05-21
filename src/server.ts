@@ -44,11 +44,11 @@ async function start() {
 
     // 5. Index intent dari DB ke vector DB
     app.log.info('Indexing intents into vector DB...');
-    // await vectorService.indexAllIntents(dbIntents);
+    await vectorService.indexAllIntents(dbIntents);
 
     // 6. Ingest all knowledge sources
     app.log.info('Ingesting all knowledge sources...');
-    // await ingestAllKnowledge(app);
+    await ingestAllKnowledge(app);
 
     // 7. Override registry dengan data dari DB
     // (supaya examples dari DB yang dipakai, bukan dari file)
