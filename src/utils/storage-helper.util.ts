@@ -255,6 +255,17 @@ class StorageHelper {
    */
   private getMinioFileUrl(key: string): string {
     const minioConfig = config.minio
+    
+    // C-009 FIX: Use public URL if configured (e.g., https://apis3.hrms.duluin.com)
+    if (minioConfig.publicUrl) {
+      // Remove trailing slash if present
+      const baseUrl = minioConfig.publicUrl.endsWith('/') 
+        ? minioConfig.publicUrl.slice(0, -1) 
+        : minioConfig.publicUrl;
+      return `${baseUrl}/${this.bucketName}/${key.replace(/\\/g, '/')}`;
+    }
+    
+    // Fallback to default MinIO URL
     const protocol = minioConfig.useSSL ? 'https' : 'http'
     return `${protocol}://${minioConfig.endPoint}:${minioConfig.port}/${this.bucketName}/${key.replace(/\\/g, '/')}`
   }

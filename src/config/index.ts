@@ -91,6 +91,8 @@ export const config = {
     secretKey: process.env.MINIO_SECRET_KEY ?? '',
     bucket: process.env.MINIO_BUCKET ?? 'uploads',
     enabled: process.env.MINIO_ENABLED !== 'false',
+    // C-009 FIX: Public URL for accessing uploaded files (e.g., https://apis3.hrms.duluin.com)
+    publicUrl: process.env.MINIO_PUBLIC_URL ?? '',  // Override default MinIO URL
   },
 
   storage: {

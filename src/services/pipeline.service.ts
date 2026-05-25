@@ -145,8 +145,26 @@ class PipelineService {
         metricsService.recordSlotFilling();
         const slotFillingStage = this.getSlotFillingStage();
         const result = await slotFillingStage.resume(input, pending, agent, startTotal);
-        
+
         if (result.result) {
+          // C-009 FIX: Update working memory after successful slot filling execution
+          // This ensures continuation can find the handler for follow-up requests
+          if (result.isComplete && result.collectedParams) {
+            const workingMemoryUpdater = this.getWorkingMemoryUpdater();
+            await workingMemoryUpdater.update(input.user_id, input.app_name, {
+              type: 'plan',
+              apiResults: result.result.apiResult as Record<string, unknown>,
+              plan: { mode: 'single_step', chat: false, tasks: pending.originalPlan?.tasks || [] },
+              activeIntent: pending.intentSlugs?.[0] || 'slot_filling'
+            });
+
+            appLogger.info('[Pipeline] Working memory updated after slot filling', {
+              userId: input.user_id,
+              appName: input.app_name,
+              activeIntent: pending.intentSlugs?.[0]
+            });
+          }
+
           return result.result;
         }
         return await this.getChatStage().execute(input, agent, startTotal);
