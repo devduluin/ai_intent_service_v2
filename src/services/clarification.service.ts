@@ -86,6 +86,7 @@ Aturan Ketat:
      const provider = agent.llmModel?.provider || config.default?.provider || 'ollama'
 
     const llmModel = agent.llmModel?.modelCode || config.ollama?.llmModel
+    console.log(`[Clarification] Agent: ${agent.llmModel?.modelCode}`)
     
     // Case 1: Hanya 1 parameter yang missing dari 1 tool
     if (uniqueMissing.length === 1 && missingToolsParams.length === 1) {

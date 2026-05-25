@@ -237,6 +237,26 @@ class QueryRewriteService {
       return { needsRewrite: true, reason: 'short_follow_up_reference' }
     }
 
+    // C-009 FIX: Single word locations are likely follow-ups (e.g., "bali", "jakarta")
+    // Check if it's a single word that could be a location/city
+    if (wordCount === 1 && normalized.length >= 3 && normalized.length <= 20) {
+      // Common location indicators or capitalized words (proper nouns)
+      const isLikelyLocation = 
+        /^[A-Z]/.test(text) ||  // Starts with capital (e.g., "Bali", "Jakarta")
+        /\b(bali|jakarta|bandung|surabaya|medan|semarang|makassar|palembang|denpasar|yogyakarta|lombok|batam|malang|padang|manado|pontianak|balikpapan|samarinda|jambi|pekanbaru|bandar lampung|mataram|kupang|ambon|jayapura|gorontalo|kendari|ternate|sofifi|mamuju|palu|kendal|blitar|probolinggo|madiun|pasuruan|mojokerto|batu|tasikmalaya|cirebon|pekalongan|salatiga|tegal|banjarmasin|palangkaraya|tarakan|singkawang)\b/i.test(normalized)
+
+      if (isLikelyLocation) {
+        appLogger.debug('[QueryRewrite] Detected single word location follow-up', {
+          text,
+          normalized,
+          wordCount,
+          isCapitalized: /^[A-Z]/.test(text),
+          matchesPattern: /\b(bali|jakarta|bandung|surabaya|medan|semarang|makassar|palembang|denpasar|yogyakarta|lombok|batam|malang|padang|manado|pontianak|balikpapan|samarinda|jambi|pekanbaru|bandar lampung|mataram|kupang|ambon|jayapura|gorontalo|kendari|ternate|sofifi|mamuju|palu|kendal|blitar|probolinggo|madiun|pasuruan|mojokerto|batu|tasikmalaya|cirebon|pekalongan|salatiga|tegal|banjarmasin|palangkaraya|tarakan|singkawang)\b/i.test(normalized)
+        });
+        return { needsRewrite: true, reason: 'single_word_location_followup' }
+      }
+    }
+
     return { needsRewrite: false, reason: 'standalone_query' }
   }
 

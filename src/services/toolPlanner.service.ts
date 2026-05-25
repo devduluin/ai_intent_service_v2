@@ -36,13 +36,23 @@ class ToolPlannerService {
     const knowledgeDetails = this.buildKnowledgeDetails(input.candidates.knowledgeDetails || [])
     const recentUsage = this.buildRecentUsageHints(input.recentUsage as PlannerOutput | undefined)
 
+    // C-009 FIX: Add resource recommendation hint if available
+    const resourceRecommendation = input.recommendedResource
+      ? `
+
+REKOMENDASI RESOURCE TYPE (dari confidence analysis):
+- Resource yang direkomendasikan: ${input.recommendedResource.toUpperCase()}
+- Gunakan ini sebagai REFERENSI untuk meningkatkan confidence pemilihan resource.
+- Jika tidak relevan dengan user query, abaikan dan pilih resource yang paling tepat.`
+      : ''
+
     return `
 You are an AI Task Planner.
 
 Goal:
 Membuat TASK GRAPH untuk menjawab pertanyaan dengan available resources.
 
-MODE: 
+MODE:
 single_step → cukup 1 resource (handler/tool/knowledge) untuk menjawab
 multi_step → butuh kombinasi resource untuk menjawab
 
@@ -51,6 +61,7 @@ RESOURCE TYPE PRIORITY (WAJIB):
 2. Handlers → greeting, skill, generate file (jika diminta buat output berupa file)
 3. Knowledge → informasi statis
 4. Chat → fallback terakhir jika semua tidak cukup
+${resourceRecommendation}
 
 MULTI TASK DETECTION:
 Jika user menanyakan beberapa hal → pilih SEMUA Resource yang relevan.
@@ -81,7 +92,7 @@ ${knowledgeDetails}
 HINT RIWAYAT:
 ${recentUsage}
 
-Gunakan riwayat sebagai PREFERENSI jika yakin RELEVAN dengan pesan user., 
+Gunakan riwayat sebagai PREFERENSI jika yakin RELEVAN dengan pesan user.,
 
 PESAN USER :
 "${input.userText}"
@@ -98,7 +109,7 @@ Output: {
   "tasks": [
     { "id": "1", "resource": "tool/handler/knowledge", "key": "key_1", "depends_on": [] }
   ]
-} 
+}
 
 CONTOH (multi_step) :
 Output: {

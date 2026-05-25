@@ -114,6 +114,50 @@ const FORMAT_PATTERNS: Array<{ key: string; pattern: RegExp }> = [
   { key: 'txt', pattern: /\b(txt|text|plain text)\b/i },
 ]
 
+// ============================================================
+// TEMPORAL EXPRESSIONS - Single source of truth
+// Extracted from TEMPORAL_PATTERNS for use in extractTemporalDetails
+// ============================================================
+const TEMPORAL_EXPRESSIONS = [
+  // Indonesian - Days
+  'hari ini', 'besok', 'lusa', 'kemarin', 'kemarin lusa',
+  // Indonesian - Weeks
+  'minggu ini', 'minggu depan', 'minggu lalu', 'minggu kemarin',
+  // Indonesian - Months
+  'bulan ini', 'bulan depan', 'bulan lalu', 'bulan kemarin',
+  // Indonesian - Years
+  'tahun ini', 'tahun depan', 'tahun lalu',
+  // Indonesian - Quarters
+  'kuartal ini', 'kuartal depan', 'kuartal lalu',
+  // Indonesian - Periods
+  'periode ini', 'periode depan', 'periode lalu',
+  // Current time (Sekarang/Now)
+  'sekarang', 'saat ini', 'kini',
+  // English - Days
+  'today', 'tomorrow', 'yesterday', 'day after tomorrow', 'day before yesterday',
+  // English - Weeks
+  'this week', 'next week', 'last week',
+  // English - Months
+  'this month', 'next month', 'last month',
+  // English - Years
+  'this year', 'next year', 'last year',
+  // English - Quarters
+  'this quarter', 'next quarter', 'last quarter',
+  // Current time (English)
+  'now', 'right now', 'currently',
+]
+
+// Month names - Single source of truth (used in both TEMPORAL_PATTERNS and extractTemporalDetails)
+const INDONESIAN_MONTH_NAMES = [
+  'januari', 'februari', 'maret', 'april', 'mei', 'juni',
+  'juli', 'agustus', 'september', 'oktober', 'november', 'desember'
+]
+
+const ENGLISH_MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december'
+]
+
 const TEMPORAL_PATTERNS = [
   // Indonesian - Days
   /\bhari ini\b/i,
@@ -121,73 +165,81 @@ const TEMPORAL_PATTERNS = [
   /\blusa\b/i,
   /\bkemarin\b/i,
   /\bKemarin lusa\b/i,
-  
+
   // Indonesian - Weeks
   /\bminggu ini\b/i,
   /\bminggu depan\b/i,
   /\bminggu lalu\b/i,
   /\bminggu kemarin\b/i,
-  
+
   // Indonesian - Months
   /\bbulan ini\b/i,
   /\bbulan depan\b/i,
   /\bbulan lalu\b/i,
   /\bbulan kemarin\b/i,
-  
+
   // Indonesian - Years
   /\btahun ini\b/i,
   /\btahun depan\b/i,
   /\btahun lalu\b/i,
   /\btahun kemarin\b/i,
-  
+
   // Indonesian - Quarters
   /\bkuartal ini\b/i,
   /\bkuartal depan\b/i,
   /\bkuartal lalu\b/i,
-  
+
   // Indonesian - Periods
   /\bperiode ini\b/i,
   /\bperiode depan\b/i,
   /\bperiode lalu\b/i,
-  
+
+  // Current time expressions (Sekarang/Now)
+  /\bsekarang\b/i,
+  /\bsaat ini\b/i,
+  /\bkini\b/i,
+  /\bnow\b/i,
+  /\bright now\b/i,
+  /\bcurrently\b/i,
+
   // English - Days
   /\btoday\b/i,
   /\btomorrow\b/i,
   /\bday after tomorrow\b/i,
   /\byesterday\b/i,
   /\bday before yesterday\b/i,
-  
+
   // English - Weeks
   /\bthis week\b/i,
   /\bnext week\b/i,
   /\blast week\b/i,
-  
+
   // English - Months
   /\bthis month\b/i,
   /\bnext month\b/i,
   /\blast month\b/i,
-  
+
   // English - Years
   /\bthis year\b/i,
   /\bnext year\b/i,
   /\blast year\b/i,
-  
+
   // English - Quarters
   /\bthis quarter\b/i,
   /\bnext quarter\b/i,
   /\blast quarter\b/i,
-  
+
   // Date formats
   /\b\d{4}-\d{2}-\d{2}\b/,  // 2024-01-15
   /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/,  // 15/01/2024 or 01/15/2024
   /\b\d{1,2}-\d{1,2}-\d{2,4}\b/,  // 15-01-2024
-  
+
   // Indonesian month names
   /\b(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\b/i,
-  
+
   // English month names
   /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
-  
+
   // Relative time
   /\b\d+\s*(hari|week|weeks|month|months|year|years)\s*(yang lalu|ago|depan|from now)\b/i,
   /\b(beberapa|a few|several)\s*(hari|week|weeks|month|months|year|years)\b/i,
@@ -566,54 +618,73 @@ class QueryDecompositionService {
     const normalizedQuery = this.normalizeQuery(query)
 
     // Use the utility function to resolve temporal expressions
-    const temporalExpressions = [
-      // Indonesian
-      'hari ini', 'besok', 'lusa', 'kemarin', 'kemarin lusa',
-      'minggu ini', 'minggu depan', 'minggu lalu', 'minggu kemarin',
-      'bulan ini', 'bulan depan', 'bulan lalu', 'bulan kemarin',
-      'tahun ini', 'tahun depan', 'tahun lalu',
-      'kuartal ini', 'kuartal depan', 'kuartal lalu',
-      'periode ini', 'periode depan', 'periode lalu',
-      // English
-      'today', 'tomorrow', 'yesterday',
-      'this week', 'next week', 'last week',
-      'this month', 'next month', 'last month',
-      'this year', 'next year', 'last year',
-      'this quarter', 'next quarter', 'last quarter',
-    ]
-
-    for (const expr of temporalExpressions) {
+    for (const expr of TEMPORAL_EXPRESSIONS) {
       if (normalizedQuery.includes(expr)) {
         const resolved = resolveTemporalExpression(expr)
         if (resolved) {
+          // Format dates as YYYY-mm-dd for date types
+          let normalizedValue = resolved.resolvedValue;
+          let type = resolved.type;
+
+          // If we can resolve to a specific date (YYYY-mm-dd), use type "date"
+          if (resolved.startDate && ['day', 'date'].includes(resolved.type)) {
+            normalizedValue = this.formatDateToISO(resolved.startDate);
+            type = 'date';  // Use "date" for specific dates like "2026-05-25"
+          } else if (resolved.type === 'year' && resolved.startDate) {
+            normalizedValue = resolved.startDate.getFullYear().toString();
+          } else if (resolved.startDate && resolved.endDate) {
+            // For periods (week, month, quarter), use ISO date range
+            normalizedValue = this.formatDateRange(resolved.startDate, resolved.endDate);
+          }
+
           details.push({
-            type: resolved.type,
+            type: type,
             value: resolved.value,
-            normalizedValue: resolved.resolvedValue,
+            normalizedValue: normalizedValue,
             direction: resolved.direction
           })
         }
       }
     }
 
-    // Date patterns
+    // Date patterns (ISO format: YYYY-mm-dd)
     const isoDateMatch = query.match(/\b(\d{4}-\d{2}-\d{2})\b/)
     if (isoDateMatch) {
       details.push({ type: 'date', value: isoDateMatch[1], normalizedValue: isoDateMatch[1], direction: 'past' })
     }
 
+    // Slash date patterns (DD/MM/YYYY or DD/MM/YY)
     const slashDateMatch = query.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/)
     if (slashDateMatch) {
-      details.push({ type: 'date', value: slashDateMatch[1], normalizedValue: slashDateMatch[1], direction: 'past' })
+      const isoDate = this.parseSlashDate(slashDateMatch[1]);
+      details.push({ type: 'date', value: slashDateMatch[1], normalizedValue: isoDate, direction: 'past' })
     }
 
-    // Month names
-    const monthNames = ['januari', 'februari', 'maret', 'april', 'mei', 'juni', 'juli', 'agustus', 'september', 'oktober', 'november', 'desember']
-    for (const month of monthNames) {
+    // Month names (Indonesian)
+    for (const month of INDONESIAN_MONTH_NAMES) {
       const regex = new RegExp(`\\b${month}\\b`, 'i')
       if (regex.test(query)) {
         details.push({ type: 'month', value: month, normalizedValue: month, direction: 'current' })
       }
+    }
+
+    // Month names (English)
+    for (const month of ENGLISH_MONTH_NAMES) {
+      const regex = new RegExp(`\\b${month}\\b`, 'i')
+      if (regex.test(query)) {
+        details.push({ type: 'month', value: month, normalizedValue: month, direction: 'current' })
+      }
+    }
+
+    // Year patterns (e.g., "2024", "tahun 2025") - keep as type "year"
+    const yearMatch = query.match(/\b(19|20)\d{2}\b/);
+    if (yearMatch) {
+      details.push({
+        type: 'year',
+        value: yearMatch[0],
+        normalizedValue: yearMatch[0],
+        direction: yearMatch[0] >= new Date().getFullYear().toString() ? 'future' : 'past'
+      });
     }
 
     // Relative time (e.g., "5 hari yang lalu", "2 weeks ago")
@@ -621,16 +692,56 @@ class QueryDecompositionService {
     if (relativeMatch) {
       const resolved = resolveTemporalExpression(relativeMatch[0])
       if (resolved) {
+        // Format as ISO date if it resolves to a specific date
+        let normalizedValue = resolved.resolvedValue;
+        let type = resolved.type;
+
+        if (resolved.startDate && ['day', 'date'].includes(resolved.type)) {
+          normalizedValue = this.formatDateToISO(resolved.startDate);
+          type = 'date';  // Use "date" for specific dates
+        } else if (resolved.type === 'year' && resolved.startDate) {
+          normalizedValue = resolved.startDate.getFullYear().toString();
+        }
+
         details.push({
-          type: resolved.type,
+          type: type,
           value: resolved.value,
-          normalizedValue: resolved.resolvedValue,
+          normalizedValue: normalizedValue,
           direction: resolved.direction
         })
       }
     }
 
-    return details.length > 0 ? details : undefined
+    return details.length > 0 ? details : []
+  }
+
+  /**
+   * Format date as YYYY-mm-dd
+   */
+  private formatDateToISO(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  /**
+   * Format date range as ISO date range
+   */
+  private formatDateRange(start: Date, end: Date): string {
+    return `${this.formatDateToISO(start)} to ${this.formatDateToISO(end)}`;
+  }
+
+  /**
+   * Parse slash date format (DD/MM/YYYY or DD/MM/YY) to YYYY-mm-dd
+   */
+  private parseSlashDate(slashDate: string): string {
+    const parts = slashDate.split('/');
+    if (parts.length === 3) {
+      const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+      return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    return slashDate;
   }
 
   private detectLanguage(normalizedQuery: string): 'id' | 'en' | 'unknown' {
@@ -665,6 +776,11 @@ class QueryDecompositionService {
 
   private escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  splitByConnectors(query: string): string[] {
+    const segments = this.segmentQuery(query);
+    return segments.map(s => s.text);
   }
 }
 

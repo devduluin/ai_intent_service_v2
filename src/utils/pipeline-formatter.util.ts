@@ -3,13 +3,16 @@ import type { PipelineResult, PipelineError } from '../types';
 
 export class PipelineFormatter {
   /**
-   * Membangun hasil untuk kasus awal/pre-execution 
+   * Membangun hasil untuk kasus awal/pre-execution
    */
-  static buildEarly(decision: { intent: string, score: number, message: string }, startTime: number): PipelineResult {
+  static buildEarly(
+    decision: { intent: string, score: number, message: string, apiResult?: unknown },
+    startTime: number
+  ): PipelineResult {
     return {
       intent: decision.intent,
       score: decision.score,
-      apiResult: null,
+      apiResult: decision.apiResult ?? null,
       naturalResponse: decision.message,
       metadata: this.getMetadata(startTime)
     };

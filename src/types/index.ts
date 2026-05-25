@@ -122,13 +122,15 @@ export interface PlannerInput {
   candidates: {
     handlers: string[]       // slug only (backward compatibility)
     tools: string[]           // slug only (backward compatibility)
-    knowledge: string[]  
+    knowledge: string[]
     handlerDetails?: any[]     // slug only (backward compatibility)
     toolsDetails?: any[]      // full intent objects for tools
     knowledgeDetails?: any[]  // full intent objects for knowledge
   }
   recentUsage?: RecentPlannerInput
   language?: string
+  // C-009 FIX: Optional resource recommendation from confidence decision
+  recommendedResource?: 'tool' | 'handler' | 'knowledge'
 }
 
 // export interface PlannerOutput {

@@ -7,7 +7,7 @@ module.exports = {
         id: Sequelize.literal('gen_random_uuid()'),
         name: 'Qwen 3.5 Flash',
         provider: 'qwen',
-        modelCode: 'qwen3.5-flash',
+        modelCode: 'qwen3.5-flash-2026-02-23',
         contextWindow: 128000,
         maxOutputTokens: 8192,
         costPer1kInput: 0.0001,

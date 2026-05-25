@@ -580,6 +580,102 @@ class VectorService {
   // ============================================================
 
   /**
+   * Get intent by slug - returns single intent match with fixed score
+   * @param slug - Intent slug to search for
+   * @param intents - Array of intents to find full intent data (description, examples, etc.)
+   * @returns Promise<IntentMatch[]> - Array with 1 IntentMatch (score: 0.9) or empty array
+   */
+  async getIntentBySlug(intents: Intent[], slug?: string,): Promise<IntentMatch[]> {
+    if (!slug) {
+      return [];
+    }
+    const startTime = Date.now();
+    this.metrics.totalQueries++;
+
+    try {
+      const col = this.ensureCollection();
+
+      // Query by metadata where intentSlug matches
+      const results = await withTimeout(
+        withRetry(
+          () =>
+            col.get({
+              where: {
+                intentSlug: slug,
+              },
+              include: [IncludeEnum.Metadatas],
+              limit: 1, // Get just one match
+            }),
+          defaultRetryConfig,
+          'getIntentBySlug query'
+        ),
+        DEFAULT_TIMEOUT,
+        'getIntentBySlug'
+      );
+
+      if (!results.metadatas || results.metadatas.length === 0) {
+        vectorLogger.debug('Intent not found by slug', { slug });
+        this.metrics.successfulQueries++;
+        return [];
+      }
+
+      // Extract intent ID from metadata
+      const metadata = results.metadatas[0] as {
+        intentId: string;
+        agentId: string;
+        intentSlug: string;
+        intentName?: string;
+      };
+
+      vectorLogger.debug('Intent found by slug', {
+        slug,
+        intentId: metadata.intentId,
+        intentName: metadata.intentName,
+      });
+
+      // Find full intent data from provided intents array
+      const fullIntent = intents.find(i => i.id === metadata.intentId);
+
+      if (!fullIntent) {
+        vectorLogger.warn('Intent metadata found but not in provided intents array', {
+          slug,
+          intentId: metadata.intentId,
+        });
+        return [];
+      }
+
+      // Return as IntentMatch with full intent data and fixed score 0.9
+      const match: IntentMatch = {
+        intent: fullIntent,
+        score: 0.9, // Fixed high confidence score
+      };
+
+      const duration = Date.now() - startTime;
+      this.metrics.successfulQueries++;
+      this.updateAverageQueryTime(duration);
+
+      vectorLogger.info('getIntentBySlug completed', {
+        slug,
+        intentId: metadata.intentId,
+        durationMs: duration,
+      });
+
+      return [match];
+    } catch (error) {
+      this.metrics.failedQueries++;
+      const duration = Date.now() - startTime;
+
+      vectorLogger.error('getIntentBySlug failed', {
+        slug,
+        error: error instanceof Error ? error.message : error,
+        durationMs: duration,
+      });
+
+      return [];
+    }
+  }
+
+  /**
    * Find matching intents with agent isolation
    */
   async findIntent(
@@ -764,6 +860,7 @@ class VectorService {
     }
   }
 
+  
   // ============================================================
   // MAINTENANCE OPERATIONS
   // ============================================================

@@ -1,23 +1,22 @@
-import { openAiService } from './openAi.service';
-import { episodicMemoryRepository } from '../repositories/episodic-memory.repository';
-import { globalCache } from '../utils/cache-helper.util';
-import { openAiService as alibabaService } from './openAi.service';
-import type { ChatMessage } from '../types';
-import type { PlannerOutput } from '../types/planner.types';
-import type { Agent } from '../types/agent.types';
-import type { EpisodicMemory } from '../types/episodic-memory.types';
-import { config } from '../config';
-import { trimChatHistory } from '../utils/trim-chat';
-import { appLogger } from '../utils/logger.util';
+import { openAiService } from '../openAi.service';
+import { episodicMemoryRepository } from '../../repositories/episodic-memory.repository';
+import { globalCache } from '../../utils/cache-helper.util';
+import type { ChatMessage } from '../../types';
+import type { PlannerOutput } from '../../types/planner.types';
+import type { Agent } from '../../types/agent.types';
+import type { EpisodicMemory } from '../../types/episodic-memory.types';
+import { config } from '../../config';
+import { trimChatHistory } from '../../utils/trim-chat';
+import { appLogger } from '../../utils/logger.util';
 
 // ============================================================
 // Constants
 // ============================================================
 
-const MAX_SLOTS_PER_USER = 6; // Daily limit per user
+const MAX_SLOTS_PER_USER = 6;
 const CACHE_PREFIX = 'episodic_memory:';
-const CONTEXT_CACHE_TTL = 300; // 5 minutes
-const LAST_CONTEXT_CACHE_TTL = 600; // 10 minutes
+const CONTEXT_CACHE_TTL = 300;
+const LAST_CONTEXT_CACHE_TTL = 600;
 
 type MenuMemory = {
   user_id: string;
@@ -27,30 +26,31 @@ type MenuMemory = {
 };
 
 // ============================================================
-// Episodic Memory Service Class
+// Episodic Memory Manager
 // ============================================================
 
-class EpisodicMemoryService {
-  // In-memory cache for menu (lightweight, no DB needed)
+export class EpisodicMemoryManager {
   private lastMenuDb: MenuMemory[] = [];
 
   constructor() {
-    appLogger.info('EpisodicMemoryService initialized', {
+    appLogger.info('EpisodicMemoryManager initialized', {
       maxSlotsPerUser: MAX_SLOTS_PER_USER,
       redisAvailable: globalCache.isRedisAvailable()
     });
   }
 
   // ============================================================
-  // 1️⃣ SAVE MENU (AI show numbered menu)
+  // Menu Management
   // ============================================================
+
+  /**
+   * Save a numbered menu for user selection
+   */
   saveMenu(userId: string, app: string, menu: string[]): void {
-    // Remove existing menu for this user+app
     this.lastMenuDb = this.lastMenuDb.filter(
       (m) => !(m.user_id === userId && m.app_name === app)
     );
 
-    // Add new menu
     this.lastMenuDb.push({
       user_id: userId,
       app_name: app,
@@ -65,13 +65,12 @@ class EpisodicMemoryService {
     });
   }
 
-  // ============================================================
-  // 2️⃣ DETECT MENU SELECTION ("1" → rewrite intent)
-  // ============================================================
+  /**
+   * Detect menu selection ("1" → rewrite intent)
+   */
   rewriteIfMenuSelection(userId: string, app: string, text: string): string {
     const clean = text.trim();
 
-    // Check if input is a single digit 1-9
     if (!/^[1-9]$/.test(clean)) {
       return text;
     }
@@ -103,8 +102,12 @@ class EpisodicMemoryService {
   }
 
   // ============================================================
-  // 3️⃣ UPSERT MEMORY SLOT (Core Feature)
+  // Core Memory Operations
   // ============================================================
+
+  /**
+   * Upsert memory slot for a user+app+intent combination
+   */
   private async upsertMemory(
     intent: string | null,
     provider: string,
@@ -127,17 +130,13 @@ class EpisodicMemoryService {
     });
 
     try {
-      // Upsert in database
       const memory = await episodicMemoryRepository.upsert(userId, app, intentKey, {
         level: 'daily',
         summary,
         toolsUsed: toolsUsed || null,
       });
 
-      // Enforce slot limit
       await this.enforceSlotLimit(userId, app);
-
-      // Invalidate cache for this user+app
       await this.invalidateContextCache(userId, app);
 
       appLogger.info('Episodic memory upserted', {
@@ -159,9 +158,9 @@ class EpisodicMemoryService {
     }
   }
 
-  // ============================================================
-  // 4️⃣ ENFORCE SLOT LIMIT (MAX_SLOTS_PER_USER)
-  // ============================================================
+  /**
+   * Enforce slot limit per user+app
+   */
   private async enforceSlotLimit(userId: string, app: string): Promise<void> {
     try {
       const count = await episodicMemoryRepository.countByUserAndApp(userId, app);
@@ -180,7 +179,6 @@ class EpisodicMemoryService {
           remainingSlots: count - deletedCount
         });
 
-        // Invalidate cache after cleanup
         await this.invalidateContextCache(userId, app);
       }
     } catch (error) {
@@ -193,8 +191,12 @@ class EpisodicMemoryService {
   }
 
   // ============================================================
-  // 5️⃣ SUMMARIZE CONVERSATION → STORE MEMORY
+  // Conversation Summarization
   // ============================================================
+
+  /**
+   * Summarize conversation and store as episodic memory
+   */
   async summarize(
     agent: Agent,
     intent: string | null,
@@ -203,7 +205,6 @@ class EpisodicMemoryService {
     chatHistory: ChatMessage[],
     planSeen?: PlannerOutput
   ): Promise<string | null> {
-    // Validate input
     if (!chatHistory || chatHistory.length < 2) {
       appLogger.debug('Skipping summary: insufficient chat history', {
         userId,
@@ -224,7 +225,6 @@ class EpisodicMemoryService {
     });
 
     try {
-      // Trim chat history for efficiency
       const trimmedHistory = trimChatHistory(chatHistory, {
         maxMessages: 2,
         maxLength: 200,
@@ -249,7 +249,7 @@ ${conversationText}
 Ringkasan:`.trim();
 
       const summary = (
-        await alibabaService.chat(provider, llmModel, prompt)
+        await openAiService.chat(provider, llmModel, prompt)
       ).trim();
 
       appLogger.debug('Summary generated', {
@@ -257,7 +257,6 @@ Ringkasan:`.trim();
         summary: summary.substring(0, 100)
       });
 
-      // Store memory
       await this.upsertMemory(intent, provider, llmModel, userId, app, summary, planSeen);
 
       return summary;
@@ -272,8 +271,12 @@ Ringkasan:`.trim();
   }
 
   // ============================================================
-  // 6️⃣ GET RECENT CONTEXT (Redis Cache + DB Fallback)
+  // Context Retrieval
   // ============================================================
+
+  /**
+   * Get recent context summaries (Redis cache + DB fallback)
+   */
   async getRecentContext(
     userId: string,
     app: string,
@@ -282,7 +285,6 @@ Ringkasan:`.trim();
     const cacheKey = `${CACHE_PREFIX}context:${userId}:${app}`;
 
     try {
-      // Try Redis cache first
       const cached = await globalCache.get<string>(cacheKey);
       if (cached) {
         appLogger.debug('Context cache HIT', {
@@ -293,7 +295,6 @@ Ringkasan:`.trim();
         return cached;
       }
 
-      // Cache miss - fetch from database
       appLogger.debug('Context cache MISS, fetching from DB', {
         userId,
         appName: app
@@ -317,7 +318,6 @@ ${joined}
 Pesan saat ini:
 `.trim();
 
-      // Cache the result
       await globalCache.set(cacheKey, context, {
         ttl: CONTEXT_CACHE_TTL * 1000,
       });
@@ -339,9 +339,9 @@ Pesan saat ini:
     }
   }
 
-  // ============================================================
-  // 7️⃣ GET LAST CONTEXT (Redis Cache + DB Fallback)
-  // ============================================================
+  /**
+   * Get last conversation context (Redis cache + DB fallback)
+   */
   async getLastContext(
     userId: string,
     app: string
@@ -349,7 +349,6 @@ Pesan saat ini:
     const cacheKey = `${CACHE_PREFIX}last:${userId}:${app}`;
 
     try {
-      // Try Redis cache first
       const cached = await globalCache.get<EpisodicMemory>(cacheKey);
       if (cached) {
         appLogger.debug('Last context cache HIT', {
@@ -359,7 +358,6 @@ Pesan saat ini:
         return cached;
       }
 
-      // Cache miss - fetch from database
       appLogger.debug('Last context cache MISS, fetching from DB', {
         userId,
         appName: app
@@ -374,9 +372,6 @@ Pesan saat ini:
         return null;
       }
 
-      // const context = lastMemory.summary
-
-      // Cache the result
       await globalCache.set(cacheKey, lastMemory, {
         ttl: LAST_CONTEXT_CACHE_TTL * 1000,
       });
@@ -399,8 +394,12 @@ Pesan saat ini:
   }
 
   // ============================================================
-  // 8️⃣ GET TOOL USAGE HINTS
+  // Tool Usage Hints
   // ============================================================
+
+  /**
+   * Get aggregated tool usage hints from recent conversations
+   */
   async getToolUsageHints(
     userId: string,
     app: string
@@ -419,7 +418,6 @@ Pesan saat ini:
         appName: app
       });
 
-      // Return empty planner on error
       return {
         mode: "single_step",
         tasks: [],
@@ -429,8 +427,12 @@ Pesan saat ini:
   }
 
   // ============================================================
-  // 9️⃣ CACHE INVALIDATION
+  // Cache Management
   // ============================================================
+
+  /**
+   * Invalidate context cache for user+app
+   */
   private async invalidateContextCache(
     userId: string,
     app: string
@@ -456,14 +458,15 @@ Pesan saat ini:
   }
 
   // ============================================================
-  // 🔟 CLEAR USER MEMORY
+  // Memory Cleanup
   // ============================================================
+
+  /**
+   * Clear all user memory
+   */
   async clearUserMemory(userId: string, app: string): Promise<void> {
     try {
-      // Delete from database
       await episodicMemoryRepository.deleteByUserAndApp(userId, app);
-
-      // Invalidate cache
       await this.invalidateContextCache(userId, app);
 
       appLogger.info('User memory cleared', {
@@ -481,8 +484,12 @@ Pesan saat ini:
   }
 
   // ============================================================
-  // 1️⃣1️⃣ GET USER MEMORY STATS
+  // Stats & Utilities
   // ============================================================
+
+  /**
+   * Get user memory statistics
+   */
   async getUserMemoryStats(
     userId: string,
     app: string
@@ -514,16 +521,14 @@ Pesan saat ini:
     }
   }
 
-  // ============================================================
-  // 1️⃣2️⃣ DEBUG UTILS
-  // ============================================================
+  /**
+   * Debug dump of user memories
+   */
   async debugDump(userId?: string, app?: string): Promise<EpisodicMemory[]> {
     try {
       if (userId && app) {
         return await episodicMemoryRepository.findByUserAndApp(userId, app, 20);
       }
-
-      // Return all (for debugging)
       return [];
     } catch (error) {
       appLogger.error('Failed to debug dump', {
@@ -533,12 +538,11 @@ Pesan saat ini:
     }
   }
 
-  // ============================================================
-  // 1️⃣3️⃣ HEALTH CHECK
-  // ============================================================
+  /**
+   * Health check
+   */
   async isHealthy(): Promise<boolean> {
     try {
-      // Test repository connection
       await episodicMemoryRepository.countByUserAndApp('health_check', 'test');
       return true;
     } catch (error) {
@@ -549,5 +553,3 @@ Pesan saat ini:
     }
   }
 }
-
-export const episodicMemoryService = new EpisodicMemoryService();

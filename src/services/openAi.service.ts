@@ -83,23 +83,36 @@ class OpenAiService {
     llmModel: string,
     options: { temperature?: number; num_predict?: number } = {}
   ): Promise<string> {
-    
+
     // ⏱️ start timer
     const start = Date.now()
 
     const isMultiResult = this.isMultiResult(apiResult)
-    let prompt: string
     const firstName = userName.split(' ')[0]
-    const firstNameContext = firstName 
-      ? `Nama pengguna: "${firstName}"` 
+    const firstNameContext = firstName
+      ? `Nama pengguna: "${firstName}"`
       : '';
 
-    prompt = `${systemPrompt}`
-    
+    // Build system message (role: 'system')
+    const systemMessage = `${systemPrompt}
+
+Role: Natural language generator yang mengubah hasil handler/tools/knowledge execution menjadi jawaban yang mudah dimengerti oleh manusia.
+
+Guidelines:
+- Gunakan data JSON sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
+- Jika ADA hasil generator lampirkan downloadUrl agar user bisa langsung mengunduh hasilnya.
+- Jangan mengarang url jika tidak ada.
+- Jika data JSON berisi pesan error jangan berikan pesan error, cukup berikan pesan yang mudah dimengerti.
+- Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
+- Tawarkan bantuan lain jika bentuknya pertanyaan.`.trim()
+
+    // Build user message (role: 'user')
+    let userMessage: string
+
     if (isMultiResult) {
       // Multi-result: ada beberapa tool/knowledge yang dijalankan
       const resultsObj = apiResult as Record<string, unknown>
-      
+
       const resultsList = Object.entries(resultsObj)
         .map(([tool, result]) => {
           // Handle nested error
@@ -110,69 +123,53 @@ class OpenAiService {
         })
         .join('\n\n')
 
-      
-      prompt = `
-${systemPrompt}
-
+      userMessage = `
 ${firstNameContext}
 
-Percakapan: 
+Percakapan:
 "${originalQuery}"
 
 Data JSON:
-${resultsList}
+${resultsList}`.trim()
 
-Tugas: 
-- Gunakan data JSON sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
-- Jika ADA hasil generator lampirkan downloadUrl agar user bisa langsung mengunduh hasilnya.
-- Jangan mengarang url jika tidak ada.
-- Jika data JSON berisi pesan error jangan berikan pesan error, cukup berikan pesan yang mudah dimengerti.
-- Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
-
-Tawarkan bantuan lain jika bentuknya pertanyaan.
-`.trim()
-      
     } else {
       // Single result: hanya satu API/tool yang dijalankan
-      prompt = `
-${systemPrompt}
-
+      userMessage = `
 ${firstNameContext}
 
 Percakapan: "${originalQuery}"
 
 Data JSON:
-${JSON.stringify(apiResult, null, 2)}
-
-Tugas:
-- Gunakan data JSON sebagai referensi untuk menjawab dengan natural dalam bahasa ${language}.
-- Jika ADA hasil generator lampirkan downloadUrl agar user bisa langsung mengunduh hasilnya.
-- Jangan mengarang url jika tidak ada.
-- Jika data JSON berisi pesan error jangan berikan pesan error, cukup berikan pesan yang mudah dimengerti.
-- Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
-
-Tawarkan bantuan lain jika bentuknya pertanyaan.
-`.trim()
+${JSON.stringify(apiResult, null, 2)}`.trim()
     }
 
-    console.log(`[Alibaba naturalize] prompt: ${prompt}`)
+    // Separate system and user messages for better role separation
+    const messages = [
+      { role: 'system' as const, content: systemMessage },
+      { role: 'user' as const, content: userMessage }
+    ]
+
+    console.log(`[Alibaba naturalize] System message length: ${systemMessage.length} chars`)
+    console.log(`[Alibaba naturalize] User message length: ${userMessage.length} chars`)
 
     const completion = await this.createCompletion({
       model: llmModel,
-      messages: [{ role: 'user', content: prompt }],
+      messages: messages,
       temperature: options.temperature ?? 0.6,
       max_tokens: options.num_predict ?? 512,
     })
 
     const duration = Date.now() - start
-    const estimatedPromptTokens = estimateTokens(prompt, 'alibaba')
+    const totalMessageLength = systemMessage.length + userMessage.length
+    const estimatedPromptTokens = estimateTokens(systemMessage + userMessage, 'alibaba')
     const estimatedresponseTokens = estimateTokens(completion.choices[0]?.message?.content || '', 'alibaba')
     // const detailedEstimate = TokenEstimator.estimateDetailed(prompt, { modelType: 'alibaba' })
 
+    console.log(`[Alibaba naturalize] Total message length: ${totalMessageLength} chars`)
     console.log(`[Alibaba naturalize] Estimated prompt tokens: ${estimatedPromptTokens}`)
     console.log(`[Alibaba naturalize] Estimated response tokens: ${estimatedresponseTokens}`)
     // console.log(`[Alibaba naturalize] Token details:`, detailedEstimate)
-    
+
     console.log(`[Alibaba naturalize] with model ${llmModel} response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
 
     return completion.choices[0]?.message?.content || ''
@@ -198,58 +195,79 @@ Tawarkan bantuan lain jika bentuknya pertanyaan.
 
   // ----------------------------------------------------------
   // Extract parameter dari user input berdasarkan prompt
+  // Returns: { value: unknown, confidence: number }
   // ----------------------------------------------------------
   async extractParam(
     userInput: string,
     paramDescription: string,
     paramType: string,
     defaultValue: any,
-  ): Promise<unknown> {
+  ): Promise<{ value: unknown; confidence: number }> {
     const prompt = `
-Tugas: Ambil nilai untuk "${paramDescription}" dari input pengguna di bawah ini.
+Tugas: Ekstrak nilai untuk parameter "${paramDescription}" dari input pengguna.
+
 Input Pengguna: "${userInput}"
+
 Tipe Target: ${paramType}
 
-Aturan Ketat:
-1. Kembalikan HANYA nilai aslinya saja.
-2. Jika informasi "${paramDescription}" TIDAK ADA, jawab dengan kata "null".
-3. Jangan berikan penjelasan apapun.
-4. Jangan gunakan tanda baca atau karakter tambahan.
-5. JANGAN menebak atau menggunakan nilai default jika tidak disebutkan secara eksplisit.
+Instruksi:
+1. Ekstrak nilai yang relevan untuk "${paramDescription}" dari input pengguna.
+2. Berikan confidence score (0.0 - 1.0) yang menunjukkan seberapa yakin Anda bahwa nilai tersebut benar-benar disebutkan oleh pengguna.
+3. Confidence tinggi (0.8-1.0): Nilai disebutkan secara eksplisit dan jelas.
+4. Confidence sedang (0.5-0.7): Nilai dapat disimpulkan tetapi tidak eksplisit.
+5. Confidence rendah (0.0-0.4): Nilai tidak ditemukan atau sangat tidak jelas.
 
-Nilai:`.trim()
+Format output JSON (HANYA JSON, tidak ada teks lain):
+{
+  "value": <nilai yang diekstrak, atau null jika tidak ada>,
+  "confidence": <angka 0.0 sampai 1.0>
+}
 
-    const response = await this.createCompletion({
-      model: config.alibaba.naturalModel || "qwen3-8b",
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0,
-      max_tokens: 60,
-    })
+Contoh:
+- Input: "Saya ingin ke Bandung besok" untuk parameter "kota" -> {"value": "Bandung", "confidence": 0.95}
+- Input: "Saya ingin pergi besok" untuk parameter "kota" -> {"value": null, "confidence": 0.1}
+- Input: "Mungkin sekitar Jakarta" untuk parameter "kota" -> {"value": "Jakarta", "confidence": 0.6}
 
+Output:`.trim()
 
-    const estimatedPromptTokens = estimateTokens(prompt, 'alibaba')
-    const detailedEstimate = TokenEstimator.estimateDetailed(prompt, { modelType: 'alibaba' })
+    console.log(`[Extract parameter] Prompt for "${paramDescription}": ${prompt}`)
+    const response = await this.generateJson(prompt)
 
-    console.log(`[Extract parameter] Estimated prompt tokens: ${estimatedPromptTokens}`)
-    console.log(`[Extract parameter] Token details:`, detailedEstimate)
+    console.log(`[Extract parameter] Raw JSON response: ${response}`)
 
-    let raw = response.choices[0]?.message?.content?.trim() || '';
-    
-    raw = raw.replace(/^['"]|['"]$/g, '').trim();
+    try {
+      const parsed = JSON.parse(response)
+      let rawValue = parsed.value
 
-    if (raw.endsWith('.')) {
-      raw = raw.slice(0, -1);
+      // Confidence dari response
+      let confidence = typeof parsed.confidence === 'number' 
+        ? Math.max(0, Math.min(1, parsed.confidence)) 
+        : 0.5
+
+      console.log(`[Extract parameter] Parsed value: ${rawValue}, confidence: ${confidence}`)
+
+      // Handle null/low confidence
+      if (rawValue === null || rawValue === undefined || rawValue === '') {
+        confidence = Math.min(confidence, 0.3) // Cap confidence for null values
+        return { value: null, confidence }
+      }
+
+      // Clean string value
+      if (typeof rawValue === 'string') {
+        rawValue = rawValue.replace(/^['"]|['"]$/g, '').trim()
+        if (rawValue.endsWith('.')) {
+          rawValue = rawValue.slice(0, -1)
+        }
+        if (rawValue.toLowerCase() === 'null' || rawValue === '') {
+          return { value: null, confidence: Math.min(confidence, 0.3) }
+        }
+      }
+
+      return { value: rawValue, confidence }
+    } catch (error) {
+      console.error(`[Extract parameter] JSON parse error for "${paramDescription}":`, error)
+      return { value: null, confidence: 0.2 }
     }
-
-    if (raw.toLowerCase() === 'null' || raw === '') {
-    //   if (defaultValue !== undefined && defaultValue !== null) {
-    //     console.log(`[Alibaba] Using defaultValue for "${paramDescription}":`, defaultValue);
-    //     return defaultValue;
-    //   }
-      return null;
-    }
-
-    return raw;
   }
 
   // ===========================================================

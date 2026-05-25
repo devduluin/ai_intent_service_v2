@@ -1,0 +1,880 @@
+import { ollamaService } from './ollama.service';
+
+import { intentRegistry } from './intent-registry.service';
+import { clarificationService } from './clarification.service';
+import { conversationStateService } from './conversationState.service';
+import { generalChatService } from './generalChat.service';
+import { naturalizationService } from './naturalization.service';
+import { queryDecompositionService } from './query-decomposition.service';
+import { workingMemoryService, type WorkingMemoryData } from './workingMemory.service';
+import { continuationResolverService, type ContinuationResult, type ContinuationIntent } from './continuationResolver.service';
+import { toolResultCache } from './memories/toolResultCache.service';
+
+import { agentRepository } from '../repositories/agent.repository';
+
+import { PipelineValidator } from '../utils/pipeline-validator.util';
+import { PipelineFormatter } from '../utils/pipeline-formatter.util';
+import { ConversationUtil } from '../utils/conversation.util';
+import { appLogger } from '../utils/logger.util';
+
+import { knowledgeHelper } from '../services/knowledge-helper.service';
+import { toolService } from '../services/tools.service';
+import { episodicMemoryService } from '../services/episodic-memory.service';
+import { queryRewriteService } from '../services/query-rewrite.service';
+
+import { PipelineCore, type PipelineExecutionContext } from './cores/pipeline-core';
+import { ExecutionStage, NaturalizationStage, ContinuationStage, SlotFillingStage, ChatStage } from './cores/stages';
+import { WorkingMemoryUpdater } from './cores/memory/working-memory-updater';
+import { AgentLoader } from './cores/loaders/agent.loader';
+import { PipelineMetricsService } from './cores/metrics/pipeline-metrics.service';
+import type { TemporalDetailWithDates } from './cores/injectors/temporal.injector';
+
+import { config } from '../config';
+import type {
+  PipelineInput,
+  PipelineResult,
+  ToolMissingParams,
+  Intent,
+  IntentMatch,
+  PendingIntentState,
+  ToolParam,
+} from '../types';
+import type { PlannerOutput, PlannerTask } from "../types/planner.types"
+import type { Agent } from '../types/agent.types';
+import type { EpisodicMemory } from '../types/episodic-memory.types';
+import { withRetry, withTimeout } from '../utils/async-helpers.util';
+
+// ============================================================
+// Pipeline Metrics Interface (deprecated - use PipelineMetricsService)
+// ============================================================
+
+interface PipelineMetrics {
+  totalRuns: number;
+  successfulRuns: number;
+  failedRuns: number;
+  averageDuration: number;
+  intentDistribution: Record<string, number>;
+  fallbackToChatCount: number;
+  slotFillingCount: number;
+}
+
+// ============================================================
+// Constants & Configuration (deprecated - use PipelineCore config)
+// ============================================================
+
+// ============================================================
+// Pipeline Service Class
+// ============================================================
+
+class PipelineService {
+  // Core module instances
+  private pipelineCore: PipelineCore | null = null;
+  private workingMemoryUpdater: WorkingMemoryUpdater | null = null;
+  private agentLoader: AgentLoader | null = null;
+  private metricsService: PipelineMetricsService | null = null;
+  private chatStage: ChatStage | null = null;
+  private executionStage: ExecutionStage | null = null;
+  private naturalizationStage: NaturalizationStage | null = null;
+  private continuationStage: ContinuationStage | null = null;
+  private slotFillingStage: SlotFillingStage | null = null;
+
+  // Lazy initialization
+  private getPipelineCore(): PipelineCore {
+    if (!this.pipelineCore) {
+      this.pipelineCore = new PipelineCore();
+    }
+    return this.pipelineCore;
+  }
+
+  private getWorkingMemoryUpdater(): WorkingMemoryUpdater {
+    if (!this.workingMemoryUpdater) {
+      this.workingMemoryUpdater = new WorkingMemoryUpdater();
+    }
+    return this.workingMemoryUpdater;
+  }
+
+  private getAgentLoader(): AgentLoader {
+    if (!this.agentLoader) {
+      this.agentLoader = new AgentLoader();
+    }
+    return this.agentLoader;
+  }
+
+  private getMetricsService(): PipelineMetricsService {
+    if (!this.metricsService) {
+      this.metricsService = new PipelineMetricsService();
+    }
+    return this.metricsService;
+  }
+
+  private getChatStage(): ChatStage {
+    if (!this.chatStage) {
+      this.chatStage = new ChatStage();
+    }
+    return this.chatStage;
+  }
+
+  private getExecutionStage(): ExecutionStage {
+    if (!this.executionStage) {
+      this.executionStage = new ExecutionStage();
+    }
+    return this.executionStage;
+  }
+
+  private getNaturalizationStage(): NaturalizationStage {
+    if (!this.naturalizationStage) {
+      this.naturalizationStage = new NaturalizationStage();
+    }
+    return this.naturalizationStage;
+  }
+
+  private getContinuationStage(): ContinuationStage {
+    if (!this.continuationStage) {
+      this.continuationStage = new ContinuationStage();
+    }
+    return this.continuationStage;
+  }
+
+  private getSlotFillingStage(): SlotFillingStage {
+    if (!this.slotFillingStage) {
+      this.slotFillingStage = new SlotFillingStage();
+    }
+    return this.slotFillingStage;
+  }
+
+  // ============================================================
+  // PUBLIC ENTRYPOINT
+  // ============================================================
+  async run(input: PipelineInput): Promise<PipelineResult> {
+    const startTotal = Date.now();
+    const metricsService = this.getMetricsService();
+    metricsService.recordSuccess(input.text, 0); // Will be updated at end
+
+    appLogger.info('Pipeline started', {
+      userId: input.user_id,
+      appName: input.app_name,
+      textLength: input.text.length
+    });
+
+    try {
+      // ============================================================
+      // PRE-STAGE 1 : Get agent by slug from input.app_name
+      // ============================================================
+      const agentLoader = this.getAgentLoader();
+      const agent = await withRetry(
+        () => agentLoader.loadBySlug(input.app_name),
+        'agentLoader.loadBySlug'
+      );
+
+      // ============================================================
+      // PRE-STAGE 2 : Check for pending conversation state (slot filling)
+      // ============================================================
+      const pending = conversationStateService.get(input.user_id, input.app_name);
+
+      // Clear state jika user mengirim pesan "cancel"
+      if (input.text.toLowerCase() === 'cancel' || input.text.toLowerCase() === 'batal') {
+        await conversationStateService.clear(input.user_id, input.app_name);
+        appLogger.info('User cancelled pending intent', {
+          userId: input.user_id,
+          appName: input.app_name
+        });
+
+        return PipelineFormatter.buildEarly({
+          intent: 'cancel',
+          score: 1,
+          message: 'Oke, permintaan sebelumnya sudah saya batalkan. Ada lagi yang bisa saya bantu?'
+        }, startTotal);
+      }
+
+      if (pending) {
+        appLogger.debug('Resuming pending intent', {
+          userId: input.user_id,
+          intentSlugs: pending.intentSlugs
+        });
+
+        metricsService.recordSlotFilling();
+        return await this.resumePendingIntent(input, pending, agent, startTotal);
+      }
+
+      // ============================================================
+      // PRE-STAGE 3 : WORKING MEMORY & CONTINUATION RESOLVER
+      // ============================================================
+      const workingMemory = await workingMemoryService.get(input.user_id, input.app_name);
+      
+      appLogger.debug('[Pipeline] Working Memory retrieved', {
+        userId: input.user_id,
+        appName: input.app_name,
+        hasMemory: !!workingMemory,
+        activeIntent: workingMemory?.activeIntent,
+        activeTool: workingMemory?.activeTool
+      });
+
+      const continuationResult = await this.resolveContinuation(
+        input.user_id,
+        input.app_name,
+        input.text,
+        workingMemory
+      );
+
+      appLogger.debug('Continuation resolution result', {
+        userId: input.user_id,
+        appName: input.app_name,
+        continuationType: continuationResult.intent.type,
+        targetTool: continuationResult.intent.targetHandler,
+        confidence: continuationResult.intent.confidence
+      });
+
+      if (continuationResult.shouldSkipPipeline && continuationResult.intent.isContinuation) {
+        appLogger.info('[Pipeline] Continuation detected, skipping full pipeline', {
+          userId: input.user_id,
+          appName: input.app_name,
+          continuationType: continuationResult.intent.type,
+          targetTool: continuationResult.intent.targetHandler,
+          confidence: continuationResult.intent.confidence
+        });
+
+        // Execute continuation using stages
+        return await this.executeContinuation(
+          input,
+          workingMemory?.activeIntent || 'general_chat',
+          agent as Agent,
+          continuationResult,
+          startTotal
+        );
+      }
+
+      // ============================================================
+      // PRE-STAGE 4 : GET EPISODIC MEMORY
+      // ============================================================
+      const episodicMemory = await episodicMemoryService.getLastContext(
+        input.user_id,
+        input.app_name
+      );
+
+
+      // ============================================================
+      // STAGE 0: MAIN PIPELINE FLOW (uses PipelineCore)
+      // ============================================================
+      const result = await this.executeMainPipeline(input, agent, startTotal, workingMemory, episodicMemory);
+
+
+      // ============================================================
+      // POST-STAGE 1: UPDATE WORKING MEMORY SETELAH EKSEKUSI BERHASIL
+      // ============================================================
+      const workingMemoryUpdater = this.getWorkingMemoryUpdater();
+      await workingMemoryUpdater.update(input.user_id, input.app_name, {
+        type: 'plan',
+        apiResults: result.apiResult as Record<string, unknown>,
+        plan: { mode: 'single_step', chat: false, tasks: [] },
+        activeIntent: result.intent || null
+      });
+
+      // Record metrics
+      const duration = Date.now() - startTotal;
+      metricsService.recordSuccess(result.intent, duration);
+
+      return result;
+
+    } catch (err) {
+      const duration = Date.now() - startTotal;
+      metricsService.recordFailure(
+        err instanceof Error ? err : new Error('Unknown error'),
+        duration
+      );
+
+      appLogger.error('Pipeline failed', {
+        userId: input.user_id,
+        appName: input.app_name,
+        error: err instanceof Error ? err.message : err,
+        durationMs: duration
+      });
+
+      // Return error response instead of throwing
+      return PipelineFormatter.buildEarly({
+        intent: 'error',
+        score: 0,
+        message: 'Maaf, terjadi kesalahan saat memproses permintaan Anda.'
+      }, startTotal);
+    }
+  }
+
+  // ============================================================
+  // MAIN PIPELINE EXECUTION
+  // ============================================================
+  private async executeMainPipeline(
+    input: PipelineInput,
+    agent: Agent | null,
+    startTotal: number,
+    workingMemory?: WorkingMemoryData | null,
+    episodicMemory?: EpisodicMemory | null
+  ): Promise<PipelineResult> {
+    try {
+      // Get intents for context
+      const intents = intentRegistry.getAll({
+        agentId: agent?.id
+      });
+
+      if (!agent) {
+        appLogger.warn('Agent is null, using default behavior');
+      }
+
+      // ============================================================
+      // USE PIPELINECORE FOR MAIN EXECUTION
+      // ============================================================
+      const pipelineCore = this.getPipelineCore();
+
+      const context: PipelineExecutionContext = {
+        agent: agent as Agent,
+        workingMemory: workingMemory || null,
+        episodicMemory: episodicMemory || null,
+        intents,
+        startTotal
+      };
+
+      // Execute via PipelineCore
+      const coreResult = await pipelineCore.execute(input, context);
+
+      // Handle slot filling response from PipelineCore
+      if (coreResult.intent === 'slot_filling') {
+        // This means PipelineCore detected missing params
+        // We need to handle this with the existing slot filling logic
+        const missingParams = coreResult.metadata.missingParams as any;
+        const collectedParams = coreResult.metadata.collectedParams as any;
+
+        // Get the relevant intents for slot filling
+        const relevantIntents = intents.filter(intent =>
+          intent.tools?.some(t => missingParams?.some((m: any) => m.tool.slug === t.tool?.slug))
+        );
+
+        // Save state for slot filling
+        const intentSlugs = (relevantIntents.length > 0 ? relevantIntents : intents).map(i => i.slug);
+        await conversationStateService.set(input.user_id, input.app_name, {
+          intentSlugs,
+          missingToolsParams: missingParams?.map((item: any) => ({
+            toolSlug: item.tool.slug,
+            toolName: item.tool.name,
+            missing: item.missing
+          })) || [],
+          collectedParams: collectedParams || {},
+          lastUserMessage: input.text,
+          maxRetry: 3,
+          isMultiIntent: intents.length > 1,
+          originalPlan: { mode: 'single_step', chat: false, tasks: [] }
+        });
+
+        // Generate clarification question
+        const question = await clarificationService.askForMultipleParametersFromTools(
+          agent as Agent,
+          input,
+          missingParams || [],
+          input.language ?? 'Indonesia'
+        );
+
+        const intentDisplayName = intentSlugs.length > 1
+          ? intentSlugs.join(', ')
+          : intentSlugs[0] || 'unknown';
+
+        return PipelineFormatter.buildEarly(
+          {
+            intent: intentDisplayName,
+            score: 1,
+            message: question
+          },
+          startTotal
+        );
+      }
+
+      // Handle chat fallback
+      if (coreResult.intent === 'general_chat') {
+        return await this.handlePureChat(
+          agent as Agent,
+          input,
+          startTotal
+        );
+      }
+
+      // ============================================================
+      // POST-PIPELINECORE: Update working memory
+      // ============================================================
+      await this.updateWorkingMemory(input.user_id, input.app_name,
+        coreResult.intent || null,
+        {
+          type: 'plan',
+          apiResults: coreResult.apiResult as Record<string, unknown>
+        }
+      );
+
+      // Return PipelineCore result (already formatted)
+      // Note: PipelineCore returns metadata with durationMs, but PipelineResult expects number values
+      return {
+        intent: coreResult.intent,
+        score: coreResult.score,
+        apiResult: coreResult.apiResult,
+        naturalResponse: coreResult.naturalResponse,
+        metadata: coreResult.metadata as Record<string, number>
+      };
+
+    } catch (err) {
+      appLogger.error('Main pipeline execution failed', {
+        error: err instanceof Error ? err.message : err,
+        stack: err instanceof Error ? err.stack : undefined
+      });
+      throw err;
+    }
+  }
+
+  // ============================================================
+  // PRE-STAGE 2.1 — RESUME CONVERSATION (slot filling, uses SlotFillingStage)
+  // ============================================================
+  private async resumePendingIntent(
+    input: PipelineInput,
+    pending: PendingIntentState,
+    agent: Agent | null,
+    startTotal: number
+  ): Promise<PipelineResult> {
+    const slotFillingStage = this.getSlotFillingStage();
+    
+    const result = await slotFillingStage.resume(input, pending, agent, startTotal);
+    
+    const metricsService = this.getMetricsService();
+    metricsService.recordSlotFilling();
+    
+    if (result.result) {
+      return result.result;
+    }
+    
+    // Fallback if no result
+    return await this.handlePureChat(agent as Agent, input, startTotal);
+  }
+
+  // ============================================================
+  // STAGE 9.1 — NATURALIZATION (Uses NaturalizationStage)
+  // ============================================================
+  private async naturalize(
+    input: PipelineInput,
+    apiResult: unknown,
+    agent: Agent
+  ): Promise<string> {
+    const naturalizationStage = this.getNaturalizationStage();
+    return await naturalizationStage.execute(apiResult, input, agent);
+  }
+
+  private async handlePureChat(
+    agent: Agent,
+    input: PipelineInput,
+    startTotal: number
+  ): Promise<PipelineResult> {
+    try {
+      const aiResponse = await withTimeout(
+        generalChatService.handle(
+         input,
+          agent
+        ),
+        15000,
+        'generalChatService.handle'
+      );
+
+      // Simpan episodic memory untuk chat biasa
+      const messages = ConversationUtil.buildMessages(input, {
+        memoryContext: aiResponse
+      });
+
+      await episodicMemoryService.summarize(
+        agent,
+        "general_chat",
+        input.user_id,
+        input.app_name,
+        messages
+      );
+
+      // Update working memory untuk chat (clear previous workflow context)
+      await this.updateWorkingMemory(
+        input.user_id,
+        input.app_name,
+        'general_chat',
+        {
+          type: 'chat',
+          chatResponse: aiResponse
+        }
+      );
+
+      return PipelineFormatter.buildEarly(
+        {
+          intent: 'general_chat',
+          score: 1,
+          message: aiResponse
+        },
+        startTotal
+      );
+
+    } catch (err) {
+      appLogger.error('Pure chat handling failed', {
+        error: err instanceof Error ? err.message : err
+      });
+
+      // Fallback error response
+      return PipelineFormatter.buildEarly(
+        {
+          intent: 'error',
+          score: 0,
+          message: 'Maaf, terjadi kesalahan saat memproses permintaan Anda.'
+        },
+        startTotal
+      );
+    }
+  }
+
+  // ============================================================
+  // WORKING MEMORY & CONTINUATION RESOLVER (Uses ContinuationStage)
+  // ============================================================
+  private async resolveContinuation(
+    userId: string,
+    appName: string,
+    userInput: string,
+    workingMemory?: WorkingMemoryData | null
+  ): Promise<ContinuationResult> {
+    const continuationStage = this.getContinuationStage();
+    const input: PipelineInput = {
+      user_id: userId,
+      app_name: appName,
+      text: userInput
+    };
+    
+    const result = await continuationStage.execute(input, workingMemory || null);
+    
+    // Convert ContinuationStageResult to ContinuationResult for backward compatibility
+    return {
+      shouldSkipPipeline: result.shouldSkipPipeline,
+      intent: result.continuationResult?.intent || { isContinuation: false, confidence: 0, type: 'new' },
+      context: result.continuationResult?.context || { workingMemory: null, hasPreviousResult: false, availableContinuationTools: [] }
+    };
+  }
+
+  // ============================================================
+  // PRE-STAGE 3.1 — CONTINUATION EXECUTION (Uses ExecutionStage)
+  // ============================================================
+  private async executeContinuation(
+    input: PipelineInput,
+    activeIntent: string,
+    agent: Agent,
+    continuationResult: ContinuationResult,
+    startTotal: number
+  ): Promise<PipelineResult> {
+    const { intent, context } = continuationResult;
+
+    try {
+      // 1. Use cachedData from intent
+      const previousResult = intent.cachedData?.result || context.workingMemory?.activeEntities;
+
+      // 2. Execute continuation handler if target exists
+      if (intent.targetHandler) {
+        appLogger.info('[Pipeline] Executing continuation', {
+          targetHandler: intent.targetHandler,
+          userId: input.user_id,
+          appName: input.app_name,
+          hasPreviousResult: !!previousResult
+        });
+
+        // Build single-task plan
+        const continuationPlan: PlannerOutput = {
+          mode: 'single_step',
+          chat: false,
+          tasks: [{
+            id: "1",
+            resource: "handler",
+            key: intent.targetHandler,
+            depends_on: []
+          }]
+        };
+
+        // Execute using ExecutionStage
+        const executionStage = this.getExecutionStage();
+        const apiResults = await executionStage.execute(
+          continuationPlan,
+          input,
+          { previousResult },
+          {
+            cacheResults: true,
+            userId: input.user_id,
+            appName: input.app_name
+          }
+        );
+
+        // 3. Update working memory
+        await this.updateWorkingMemory(
+          input.user_id,
+          input.app_name,
+          activeIntent,
+          {
+            type: 'continuation',
+            intent: intent,
+            apiResults: apiResults.results
+          }
+        );
+
+        // 4. Naturalize response using NaturalizationStage
+        const naturalizationStage = this.getNaturalizationStage();
+        const naturalResponse = await naturalizationStage.execute(
+          apiResults.results,
+          input,
+          agent
+        );
+
+        const metricsService = this.getMetricsService();
+        metricsService.recordSuccess(activeIntent, Date.now() - startTotal);
+
+        return PipelineFormatter.buildEarly(
+          {
+            intent: activeIntent,
+            score: intent.confidence,
+            message: naturalResponse,
+            apiResult: apiResults.results
+          },
+          startTotal
+        );
+      }
+
+      // Fallback: jika tidak ada target handler spesifik
+      const metricsService = this.getMetricsService();
+      metricsService.recordFallbackToChat();
+      return await this.handlePureChat(agent, input, startTotal);
+
+    } catch (error) {
+      appLogger.error('[Pipeline] Continuation execution failed', {
+        userId: input.user_id,
+        appName: input.app_name,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+
+      // Fallback to chat on error
+      return await this.handlePureChat(agent, input, startTotal);
+    }
+  }
+
+  // ============================================================
+  // WORKING MEMORY UPDATE HELPERS
+  // ============================================================
+  private async updateWorkingMemory(
+    userId: string,
+    appName: string,
+    activeIntent: string | null,
+    context: {
+      type: 'plan' | 'continuation' | 'chat' | 'access';
+      plan?: PlannerOutput;
+      apiResults?: Record<string, unknown>;
+      params?: Record<string, unknown>;
+      intent?: ContinuationIntent;
+      chatResponse?: string;
+    }
+  ): Promise<void> {
+    try {
+      const existing = await workingMemoryService.get(userId, appName);
+
+      let updates: Partial<WorkingMemoryData> = {};
+
+      // ============================================================
+      // CONTEXT: PLAN EXECUTION
+      // ============================================================
+      if (context.type === 'plan' && context.apiResults) {
+        // Support plan with or without tasks (PipelineCore may not pass full plan)
+        const toolSlugs = context.plan?.tasks
+          ? context.plan.tasks.filter(t => t.resource === 'tool').map(t => t.key)
+          : Object.keys(context.apiResults);
+
+        // Inline inferWorkflowFromTools logic
+        let activeWorkflow: string | undefined;
+        if (toolSlugs.length > 0) {
+          const firstTool = toolSlugs[0];
+          const parts = firstTool.split('_');
+          activeWorkflow = parts.length > 1 ? parts.slice(0, -1).join('_') : firstTool;
+        }
+        
+        const activeTool = toolSlugs[0];
+
+        // Inline extractEntitiesFromParams logic
+        const activeEntities: Record<string, unknown> = {};
+        if (context.params) {
+          if (context.params.date) activeEntities.date = context.params.date;
+          if (context.params.dateStart) activeEntities.dateStart = context.params.dateStart;
+          if (context.params.dateEnd) activeEntities.dateEnd = context.params.dateEnd;
+          if (context.params.location) activeEntities.location = context.params.location;
+        }
+
+        // Inline inferContinuationHints logic
+        const continuationHints: Record<string, boolean> = {
+          canExport: false,
+          canSummarize: false,
+          canModify: false,
+          canCancel: false
+        };
+        const hasDataResult = Object.values(context.apiResults).some(
+          v => v && typeof v === 'object' && !('error' in (v as any))
+        );
+        if (hasDataResult) {
+          continuationHints.canExport = true;
+          continuationHints.canSummarize = true;
+        }
+        continuationHints.canModify = true;
+        continuationHints.canCancel = true;
+
+        updates = {
+          // FIX: Only update activeIntent if explicitly provided (not null)
+          // Don't use tool/knowledge slug as intent
+          ...(activeIntent ? { activeIntent } : {}),
+          ...(activeWorkflow ? { activeWorkflow } : {}),
+          ...(activeTool ? { activeTool } : {}),
+          activeEntities: {
+            ...existing?.activeEntities,
+            ...activeEntities
+          },
+          continuationHints,
+          metadata: {
+            ...existing?.metadata,
+            lastAccessedAt: Date.now(),
+            accessCount: (existing?.metadata?.accessCount || 0) + 1,
+            lastExecution: {
+              timestamp: Date.now(),
+              results: context.apiResults,
+              type: 'full_pipeline',
+              planMode: context.plan?.mode || 'single_step'
+            }
+          }
+        };
+
+        appLogger.info('[WorkingMemory] Updated from plan execution', {
+          userId,
+          appName,
+          activeIntent: activeIntent || 'unchanged',
+          activeWorkflow: activeWorkflow || 'unchanged',
+          activeTool: activeTool || 'unchanged',
+          entitiesCount: Object.keys(activeEntities).length,
+          hasResults: Object.keys(context.apiResults).length > 0
+        });
+      }
+
+      // ============================================================
+      // CONTEXT: CONTINUATION
+      // ============================================================
+      else if (context.type === 'continuation' && context.intent) {
+        const mergedEntities = existing?.activeEntities || {};
+        if (context.intent.extractedParams && Object.keys(context.intent.extractedParams).length > 0) {
+          Object.assign(mergedEntities, context.intent.extractedParams);
+        }
+
+        const activeTool = context.intent.targetHandler || existing?.activeTool;
+        
+        // FIX: Don't update activeIntent if null, use existing or generate from continuation type
+        const finalActiveIntent = activeIntent || existing?.activeIntent || `continuation:${context.intent.type}`;
+
+        updates = {
+          activeEntities: mergedEntities,
+          // Only update if value is not null/undefined
+          ...(activeTool ? { activeTool } : {}),
+          ...(finalActiveIntent ? { activeIntent: finalActiveIntent } : {}),
+          continuationHints: context.intent.type === 'export'
+            ? { ...existing?.continuationHints, canExport: false, canSummarize: true }
+            : existing?.continuationHints,
+          metadata: {
+            ...existing?.metadata,
+            lastAccessedAt: Date.now(),
+            accessCount: (existing?.metadata?.accessCount || 0) + 1,
+            lastExecution: {
+              timestamp: Date.now(),
+              results: context.apiResults || {},
+              type: 'continuation',
+              continuationType: context.intent.type,
+              targetTool: context.intent.targetHandler
+            }
+          }
+        };
+
+        appLogger.info('[WorkingMemory] Updated from continuation', {
+          userId,
+          appName,
+          continuationType: context.intent.type,
+          targetTool: context.intent.targetHandler,
+          entitiesCount: Object.keys(mergedEntities).length
+        });
+      }
+
+      // ============================================================
+      // CONTEXT: CHAT
+      // ============================================================
+      else if (context.type === 'chat' && context.chatResponse) {
+        updates = {
+          // FIX: Use provided activeIntent or default to 'general_chat'
+          activeIntent: activeIntent || 'general_chat',
+          activeWorkflow: undefined,
+          activeTool: undefined,
+          continuationHints: {
+            canExport: false,
+            canSummarize: true,
+            canModify: false,
+            canCancel: false
+          },
+          metadata: {
+            ...existing?.metadata,
+            lastAccessedAt: Date.now(),
+            accessCount: (existing?.metadata?.accessCount || 0) + 1,
+            lastChatResponse: context.chatResponse
+          }
+        };
+
+        appLogger.debug('[WorkingMemory] Updated for chat', {
+          userId,
+          appName
+        });
+      }
+
+      // ============================================================
+      // CONTEXT: ACCESS ONLY (lightweight)
+      // ============================================================
+      else if (context.type === 'access') {
+        if (!existing) {
+          return; // No WM to update
+        }
+
+        updates = {
+          metadata: {
+            ...existing.metadata,
+            lastAccessedAt: Date.now(),
+            accessCount: (existing.metadata?.accessCount || 0) + 1
+          }
+        };
+      }
+
+      // ============================================================
+      // APPLY UPDATES (only if there are changes)
+      // ============================================================
+      if (Object.keys(updates).length > 0) {
+        await workingMemoryService.update(userId, appName, updates);
+      }
+
+    } catch (error) {
+      appLogger.error('[WorkingMemory] Failed to update', {
+        userId,
+        appName,
+        contextType: context.type,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      // Don't throw - WM update failure should not break the pipeline
+    }
+  }
+
+  // ============================================================
+  // UTILS — GET AGENT
+  // ============================================================
+  private async getAgentBySlug(slug: string): Promise<Agent | null> {
+    try {
+      return await agentRepository.findBySlug(slug);
+    } catch (err) {
+      appLogger.error('Failed to fetch agent', {
+        slug,
+        error: err instanceof Error ? err.message : err
+      });
+      return null;
+    }
+  }
+
+  // ============================================================
