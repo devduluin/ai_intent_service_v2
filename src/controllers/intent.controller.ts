@@ -3,6 +3,7 @@ import { pipelineService } from '../services/pipeline.service'
 import { intentRepository } from '../repositories/intent.repository'
 import { agentRepository } from '../repositories/agent.repository'
 import type { IntentRequest, IntentResponse } from '../types'
+import { ResponseStructureUtil } from '../utils/response-structure.util'
 
 class IntentController {
   async handleIntent(
@@ -11,6 +12,10 @@ class IntentController {
   ): Promise<IntentResponse> {
     try {
       const result = await pipelineService.run(body)
+      const structuredResponse = ResponseStructureUtil.build(
+        result.naturalResponse,
+        result.apiResult
+      )
       
       return reply.send({
         success: true,
@@ -18,6 +23,7 @@ class IntentController {
         intent: result.intent,
         confidence: Math.round(result.score * 100) / 100,
         metadata: result.metadata,
+        structuredResponse,
       })
     } catch (err: any) {
       // error khusus pipeline (business error)

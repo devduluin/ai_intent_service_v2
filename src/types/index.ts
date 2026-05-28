@@ -276,7 +276,53 @@ export interface IntentResponse {
   intent?: string
   confidence?: number
   metadata?: PipelineResult['metadata']
+  structuredResponse?: StructuredResponse
 }
+
+export type StructuredResponse = {
+  title?: string
+  subtitle?: string
+  sections: StructuredResponseSection[]
+}
+
+export type StructuredResponseSection = {
+  id: string
+  title?: string
+  subtitle?: string
+  blocks: StructuredResponseBlock[]
+}
+
+export type StructuredResponseBlock =
+  | {
+      type: 'markdown'
+      content: string
+    }
+  | {
+      type: 'list'
+      title?: string
+      ordered?: boolean
+      items: string[]
+    }
+  | {
+      type: 'table'
+      title?: string
+      columns: string[]
+      rows: string[][]
+    }
+  | {
+      type: 'key_value'
+      title?: string
+      entries: Array<{ label: string; value: string }>
+    }
+  | {
+      type: 'note'
+      title?: string
+      content: string
+      tone?: 'info' | 'success' | 'warning' | 'danger'
+    }
+  | {
+      type: 'divider'
+    }
 
 export type ConversationStatus =
   | 'collecting_params'

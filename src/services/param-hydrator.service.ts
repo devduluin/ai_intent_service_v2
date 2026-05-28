@@ -7,11 +7,17 @@ class ParamHydratorService {
 
     const fromExtractor = extracted ?? {}
     const fromAttributes = attributes?.params ?? {}
+    const fromRootAttributes: Record<string, unknown> = {}
+
+    if (attributes?.company_id) {
+      fromRootAttributes.company_id = attributes.company_id
+    }
 
     // priority: attributes > extractor
     const merged = {
       ...fromExtractor,
       ...fromAttributes,
+      ...fromRootAttributes,
     }
 
     // remove undefined/null/"null"

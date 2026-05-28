@@ -23,7 +23,7 @@ class ToolExecutorService {
       headers,
       params: query,
       data: body,
-      timeout: 15000, // default tool timeout 15s
+      timeout: 60000, // default tool timeout 60s for slower attendance APIs
     };
 
     try {

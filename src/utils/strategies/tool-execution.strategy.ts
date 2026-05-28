@@ -26,7 +26,7 @@ export class ToolExecutionStrategy implements ExecutionStrategy {
         
         // Execute tool using execution context
         // const result = await executionContext.run("tool", tool, filteredParams, context)
-        const result = await toolExecutorService.execute(tool, params);
+        const result = await toolExecutorService.execute(tool, filteredParams);
         
         return { slug: tool.slug, status: 'fulfilled' as const, value: result }
       } catch (error) {
