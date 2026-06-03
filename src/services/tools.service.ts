@@ -11,7 +11,7 @@ class ToolService {
   }
 
 // services/tool-helper.service.ts
-getToolParams(tool: Tool): ToolParam[] {  
+getToolParams(tool: Tool): ToolParam[] {
   if (tool.parameters && Array.isArray(tool.parameters) && tool.parameters.length > 0) {
     const mapped = tool.parameters.map(param => ({
       name: param.name,
@@ -19,7 +19,11 @@ getToolParams(tool: Tool): ToolParam[] {
       description: param.description || '',
       isRequired: param.isRequired ?? false,
       defaultValue: param.defaultValue,
-      extractPrompt: param.extractPrompt || `Ambil nilai ${param.name} dari input user`
+      extractPrompt: param.extractPrompt || `Ambil nilai ${param.name} dari input user`,
+      label: param.label,
+      config: param.config,
+      order: param.order ?? 0,
+      isHidden: param.isHidden ?? false,
     }))
     console.log(`[ToolHelper] Mapped params:`, mapped.map(p => ({ name: p.name, isRequired: p.isRequired, defaultValue: p.defaultValue })))
     return mapped
@@ -29,10 +33,6 @@ getToolParams(tool: Tool): ToolParam[] {
 }
 
   async getAllParamsForIntent(intent: Intent): Promise<ToolParam[]> {
-    if (intent.executionType === 'handler') {
-      return []
-    }
-    
     if (!intent.tools || intent.tools.length === 0) {
       return []
     }
