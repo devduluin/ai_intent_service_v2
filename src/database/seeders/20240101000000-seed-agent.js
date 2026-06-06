@@ -16,7 +16,7 @@ module.exports = {
     await queryInterface.bulkInsert('agents', [
       {
         id: Sequelize.literal('gen_random_uuid()'),
-        modelId: llmMap['qwen3.5-flash-2026-02-23'],
+        modelId: llmMap['qwen-flash-2025-07-28'],
         name: 'HRIS System',
         slug: 'hris',
         description: 'Agent untuk HRIS system (attendance, payroll, employee management)',
@@ -55,7 +55,7 @@ WAJIB DIIKUTI:
 
       {
         id: Sequelize.literal('gen_random_uuid()'),
-        modelId: llmMap['qwen3.5-flash-2026-02-23'],
+        modelId: llmMap['qwen-flash-2025-07-28'],
         name: 'Accounting System',
         slug: 'accounting',
         description: 'Agent untuk accounting system (financial reports, ledger, invoice)',

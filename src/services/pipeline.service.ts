@@ -34,6 +34,8 @@ import {
   isConfirmDeleteText
 } from '../utils/text-intent-cleanup.util';
 
+import { buildCancelNoopVariants } from '../utils/cancel-noop-message.util';
+
 
 import type { PipelineInput, PipelineResult } from '../types';
 
@@ -250,7 +252,7 @@ class PipelineService {
         return PipelineFormatter.buildEarly({
           intent: 'cancel_noop',
           score: 1,
-          message: this.buildCancelNoopMessage(input)
+          message: await this.buildCancelNoopMessage(input)
         }, startTotal);
       }
 
@@ -1285,36 +1287,31 @@ class PipelineService {
     return true;
   }
 
-  private buildCancelNoopMessage(input: PipelineInput): string {
+  private async buildCancelNoopMessage(input: PipelineInput): Promise<string> {
     const recentCancelCount = (input.chat_history || [])
       .filter(item => item.role === 'user' && isCancellationText(item.content))
       .length;
+    const hasHistory = (input.chat_history || []).length > 0;
 
-    if (recentCancelCount >= 1) {
-      return [
-        'Masih tidak ada proses aktif yang perlu dibatalkan.',
-        '',
-        'Kita bisa lanjut dari awal. Silakan tulis kebutuhan baru, atau ketik `/automation manager` kalau ingin mengelola automation.'
-      ].join('\n');
+    // Resolve name: user profile (highest confidence) > attributes fallback
+    let userName: string | undefined;
+    try {
+      const profile = await userProfileService.getContext(input.user_id, input.app_name);
+      if (profile?.identity?.name) {
+        userName = profile.identity.name;
+      }
+    } catch {
+      // Fallback to attributes
+    }
+    if (!userName) {
+      userName = (input.attributes as any)?.name || (input.attributes as any)?.params?.name;
     }
 
-    const variants = [
-      'Tidak ada proses aktif yang perlu dibatalkan. Silakan tulis kebutuhan berikutnya.',
-      'Saat ini tidak ada draft, pengisian data, atau konfirmasi yang sedang berjalan. Apa yang ingin Anda lakukan berikutnya?',
-      'Belum ada proses yang sedang menunggu pembatalan. Anda bisa langsung menulis permintaan baru.'
-    ];
-
-    const index = Math.abs(this.hashText(`${input.user_id}:${input.app_name}:${input.text}`)) % variants.length;
-    return variants[index];
-  }
-
-  private hashText(value: string): number {
-    let hash = 0;
-    for (let index = 0; index < value.length; index += 1) {
-      hash = ((hash << 5) - hash) + value.charCodeAt(index);
-      hash |= 0;
-    }
-    return hash;
+    return buildCancelNoopVariants({
+      name: userName,
+      hasHistory,
+      retryCount: recentCancelCount,
+    });
   }
 }
 

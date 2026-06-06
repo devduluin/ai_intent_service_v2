@@ -18,42 +18,6 @@ module.exports = {
     await queryInterface.bulkInsert('intents', [
       {
         agentId: hrisAgentId,
-        slug: 'greeting',
-        name: 'Greeting',
-        description: 'Sapaan dan perkenalan AI',
-        executionType: 'handler',
-        handlerKey: 'handleGreeting',
-        isActive: true,
-        metadata: JSON.stringify({ icon: '👋', category: 'general' }), // ← FIX
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        agentId: hrisAgentId,
-        slug: 'xls_generator',
-        name: 'XLS Generator',
-        description: 'Menghasilkan file xls/excel berdasarkan permintaan pengguna',
-        executionType: 'handler',
-        handlerKey: 'handleGenerateXls',
-        isActive: true,
-        metadata: JSON.stringify({ icon: '👋', category: 'general' }), // ← FIX
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        agentId: hrisAgentId,
-        slug: 'data_analyzer',
-        name: 'Data Analyzer',
-        description: 'Menganalisis data berdasarkan permintaan pengguna',
-        executionType: 'handler',
-        handlerKey: 'handleDataAnalysis',
-        isActive: true,
-        metadata: JSON.stringify({ icon: '👋', category: 'general' }), // ← FIX
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        agentId: hrisAgentId,
         slug: 'utilities',
         name: 'Utilities',
         description: 'Mendapatkan fitur tools dan utilities',
@@ -172,18 +136,18 @@ module.exports = {
         createdAt: now,
         updatedAt: now,
       },
-      {
-        agentId: hrisAgentId,
-        slug: 'vehicles',
-        name: 'Vehicles Domain',
-        description: 'Mendapatkan informasi tentang detail kendaraan',
-        executionType: 'llm',
-        handlerKey: null,
-        isActive: true,
-        metadata: JSON.stringify({ icon: '🚗', category: 'vehicles' }),
-        createdAt: now,
-        updatedAt: now,
-      },
+      // {
+      //   agentId: hrisAgentId,
+      //   slug: 'vehicles',
+      //   name: 'Vehicles Domain',
+      //   description: 'Mendapatkan informasi tentang detail kendaraan',
+      //   executionType: 'llm',
+      //   handlerKey: null,
+      //   isActive: true,
+      //   metadata: JSON.stringify({ icon: '🚗', category: 'vehicles' }),
+      //   createdAt: now,
+      //   updatedAt: now,
+      // },
     ])
   },
 

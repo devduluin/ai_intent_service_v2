@@ -7,7 +7,7 @@ module.exports = {
     // Ambil ID intent yg sudah di-seed
     const intents = await queryInterface.sequelize.query(
       `SELECT id, slug FROM intents
-       WHERE slug IN ('greeting','utilities','attendance', 'overtime', 'knowledge_workin','shift','leave', 'employee', 'payslip', 'claim', 'travel_request', 'xls_generator', 'data_analyzer', 'vehicles')`,
+       WHERE slug IN ('utilities','attendance', 'overtime', 'knowledge_workin','shift','leave', 'employee', 'payslip', 'claim', 'travel_request')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 
@@ -21,46 +21,6 @@ module.exports = {
     // Production-ready with diverse variations, synonyms, and natural language patterns
     // ======================================================
     const examples = [
-
-      // ======================================================
-      // GREETING INTENT - Simple greetings and bot introduction
-      // ======================================================
-      { intent:'greeting', text:'Halo', language:'id'},
-      { intent:'greeting', text:'Hai', language:'id'},
-      { intent:'greeting', text:'Selamat pagi', language:'id'},
-      { intent:'greeting', text:'Selamat siang', language:'id'},
-      { intent:'greeting', text:'Selamat sore', language:'id'},
-      { intent:'greeting', text:'Selamat malam', language:'id'},
-      { intent:'greeting', text:'Hai bot', language:'id'},
-      { intent:'greeting', text:'Halo bot', language:'id'},
-      { intent:'greeting', text:'Assalamualaikum', language:'id'},
-      { intent:'greeting', text:'Pagi', language:'id'},
-      { intent:'greeting', text:'Siang', language:'id'},
-      { intent:'greeting', text:'Sore', language:'id'},
-      { intent:'greeting', text:'Malam', language:'id'},
-      { intent:'greeting', text:'Kamu siapa?', language:'id'},
-      { intent:'greeting', text:'Anda bot apa manusia?', language:'id'},
-      { intent:'greeting', text:'Saya butuh bantuan', language:'id'},
-      { intent:'greeting', text:'Saya mau tanya sesuatu', language:'id'},
-      { intent:'greeting', text:'Bisa bantu saya?', language:'id'},
-      { intent:'greeting', text:'Tolong bantu saya', language:'id'},
-      { intent:'greeting', text:'Permisi', language:'id'},
-      { intent:'greeting', text:'Tes', language:'id'},
-      { intent:'greeting', text:'Test', language:'id'},
-
-      { intent: 'greeting', text: 'Hello', language: 'en' },
-      { intent: 'greeting', text: 'Hi', language: 'en' },
-      { intent: 'greeting', text: 'Hey', language: 'en' },
-      { intent: 'greeting', text: 'Good morning', language: 'en' },
-      { intent: 'greeting', text: 'Good afternoon', language: 'en' },
-      { intent: 'greeting', text: 'Good evening', language: 'en' },
-      { intent: 'greeting', text: 'Good night', language: 'en' },
-      { intent: 'greeting', text: 'Who are you?', language: 'en' },
-      { intent: 'greeting', text: 'What are you?', language: 'en' },
-      { intent: 'greeting', text: 'Introduce yourself', language: 'en' },
-      { intent: 'greeting', text: 'Can you help me?', language: 'en' },
-      { intent: 'greeting', text: 'I need help', language: 'en' },
-      { intent: 'greeting', text: 'Help me please', language: 'en' },
 
 
       // ======================================================
@@ -461,80 +421,26 @@ module.exports = {
       { intent: 'overtime', text: 'Overtime rate', language: 'en' },
 
 
-      // ======================================================
-      // XLS GENERATOR - Generate Excel/CSV reports, export data
-      // ======================================================
-      { intent: 'xls_generator', text: 'Buat laporan Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Generate laporan Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Export data ke Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Download laporan Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Buat file Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Export ke format Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Buat spreadsheet', language: 'id' },
-      { intent: 'xls_generator', text: 'Generate spreadsheet', language: 'id' },
-      { intent: 'xls_generator', text: 'Export data ke spreadsheet', language: 'id' },
-      { intent: 'xls_generator', text: 'Buat laporan CSV', language: 'id' },
-      { intent: 'xls_generator', text: 'Generate file CSV', language: 'id' },
-      { intent: 'xls_generator', text: 'Export ke CSV', language: 'id' },
-      { intent: 'xls_generator', text: 'Download CSV', language: 'id' },
-      { intent: 'xls_generator', text: 'Convert ke CSV', language: 'id' },
-      { intent: 'xls_generator', text: 'Buat file CSV', language: 'id' },
-      { intent: 'xls_generator', text: 'Export data karyawan ke Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Buat laporan absensi Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Generate report Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Export attendance to Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Download employee data Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Buat laporan gaji Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Export payslip to Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Generate leave report Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Buat laporan cuti CSV', language: 'id' },
-      { intent: 'xls_generator', text: 'Export claim data Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Download laporan CSV', language: 'id' },
-      { intent: 'xls_generator', text: 'Buat tabel Excel', language: 'id' },
-      { intent: 'xls_generator', text: 'Export data ke format CSV', language: 'id' },
-      { intent: 'xls_generator', text: 'Generate Excel dari data', language: 'id' },
-      { intent: 'xls_generator', text: 'Convert data ke Excel', language: 'id' },
 
-      { intent: 'xls_generator', text: 'Create Excel report', language: 'en' },
-      { intent: 'xls_generator', text: 'Generate Excel file', language: 'en' },
-      { intent: 'xls_generator', text: 'Export to Excel', language: 'en' },
-      { intent: 'xls_generator', text: 'Download Excel report', language: 'en' },
-      { intent: 'xls_generator', text: 'Create spreadsheet', language: 'en' },
-      { intent: 'xls_generator', text: 'Export data to spreadsheet', language: 'en' },
-      { intent: 'xls_generator', text: 'Generate CSV file', language: 'en' },
-      { intent: 'xls_generator', text: 'Export to CSV', language: 'en' },
-      { intent: 'xls_generator', text: 'Download CSV', language: 'en' },
-      { intent: 'xls_generator', text: 'Create CSV report', language: 'en' },
-
-      { intent: 'data_analyzer', text: 'Coba analisa', language: 'id' },
-      { intent: 'data_analyzer', text: 'Analisis data', language: 'id' },
-      { intent: 'data_analyzer', text: 'Cari pola dalam data', language: 'id' },
-      { intent: 'data_analyzer', text: 'Jelaskan data', language: 'id' },
-      { intent: 'data_analyzer', text: 'Buat analisis data', language: 'id' },
-      { intent: 'data_analyzer', text: 'Lakukan analisa data', language: 'id' },
-
-      { intent: 'data_analyzer', text: 'Try data analysis', language: 'en' },
-
-
-      { intent: 'vehicles', text: 'Assignment kendaraan hari ini', language: 'id' },
-      { intent: 'vehicles', text: 'Assignment kendaraan exit kemarin', language: 'id' },
-      { intent: 'vehicles', text: 'kendaraan yang exit besok', language: 'id' },
-      { intent: 'vehicles', text: 'Daftar assignment kendaraan', language: 'id' },
-      { intent: 'vehicles', text: 'Kendaraan yang sudah diassign', language: 'id' },
-      { intent: 'vehicles', text: 'Vehicle assignment aktif', language: 'id' },
-      { intent: 'vehicles', text: 'Assignment kendaraan yang berjalan', language: 'id' },
-      { intent: 'vehicles', text: 'Kendaraan yang belum memiliki assignment', language: 'id' },
-      { intent: 'vehicles', text: 'Assignment kendaraan untuk driver', language: 'id' },
-      { intent: 'vehicles', text: 'Driver dan kendaraan yang diassign', language: 'id' },
-      { intent: 'vehicles', text: 'Kendaraan yang sedang digunakan', language: 'id' },
-      { intent: 'vehicles', text: 'Assignment kendaraan berdasarkan driver', language: 'id' },
-      { intent: 'vehicles', text: 'Data vehicle assignment aktif', language: 'id' },
-      { intent: 'vehicles', text: 'Assignment kendaraan yang selesai', language: 'id' },
-      { intent: 'vehicles', text: 'Riwayat assignment kendaraan', language: 'id' },
-      { intent: 'vehicles', text: 'Kendaraan yang dipakai hari ini', language: 'id' },
-      { intent: 'vehicles', text: 'Assignment mobil operasional', language: 'id' },
-      { intent: 'vehicles', text: 'Kendaraan yang sedang bertugas', language: 'id' },
-      { intent: 'vehicles', text: 'Vehicle assignment terbaru', language: 'id' },
+      // { intent: 'vehicles', text: 'Assignment kendaraan hari ini', language: 'id' },
+      // { intent: 'vehicles', text: 'Assignment kendaraan exit kemarin', language: 'id' },
+      // { intent: 'vehicles', text: 'kendaraan yang exit besok', language: 'id' },
+      // { intent: 'vehicles', text: 'Daftar assignment kendaraan', language: 'id' },
+      // { intent: 'vehicles', text: 'Kendaraan yang sudah diassign', language: 'id' },
+      // { intent: 'vehicles', text: 'Vehicle assignment aktif', language: 'id' },
+      // { intent: 'vehicles', text: 'Assignment kendaraan yang berjalan', language: 'id' },
+      // { intent: 'vehicles', text: 'Kendaraan yang belum memiliki assignment', language: 'id' },
+      // { intent: 'vehicles', text: 'Assignment kendaraan untuk driver', language: 'id' },
+      // { intent: 'vehicles', text: 'Driver dan kendaraan yang diassign', language: 'id' },
+      // { intent: 'vehicles', text: 'Kendaraan yang sedang digunakan', language: 'id' },
+      // { intent: 'vehicles', text: 'Assignment kendaraan berdasarkan driver', language: 'id' },
+      // { intent: 'vehicles', text: 'Data vehicle assignment aktif', language: 'id' },
+      // { intent: 'vehicles', text: 'Assignment kendaraan yang selesai', language: 'id' },
+      // { intent: 'vehicles', text: 'Riwayat assignment kendaraan', language: 'id' },
+      // { intent: 'vehicles', text: 'Kendaraan yang dipakai hari ini', language: 'id' },
+      // { intent: 'vehicles', text: 'Assignment mobil operasional', language: 'id' },
+      // { intent: 'vehicles', text: 'Kendaraan yang sedang bertugas', language: 'id' },
+      // { intent: 'vehicles', text: 'Vehicle assignment terbaru', language: 'id' },
 
     ]
 
@@ -552,7 +458,7 @@ module.exports = {
   async down(queryInterface) {
     const intents = await queryInterface.sequelize.query(
       `SELECT id FROM intents
-       WHERE slug IN ('greeting','utilities','attendance', 'overtime', 'knowledge_workin','shift','leave', 'claim', 'employee', 'payslip', 'travel_request', 'xls_generator', 'data_analyzer', 'vehicles')`,
+       WHERE slug IN ('utilities','attendance', 'overtime', 'knowledge_workin','shift','leave', 'claim', 'employee', 'payslip', 'travel_request')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 

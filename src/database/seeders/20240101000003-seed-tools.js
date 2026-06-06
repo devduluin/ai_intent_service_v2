@@ -456,30 +456,30 @@ module.exports = {
         createdAt: now,
         updatedAt: now,
       },
-      {
-        name: 'Get Vehicle Rental Assignment',
-        slug: 'get_vehicle_assignment',
-        description: 'Gunakan Tools ini untuk mengetahui data rental kendaraan yang sedang disewa, setatus kendaraan.',
-        method: 'GET',
-        url: `https://api.sevaqu.com/api/v2/service_vehicle/vehicle-assignments/ai-summary`,
-        authType: 'none',
+      // {
+      //   name: 'Get Vehicle Rental Assignment',
+      //   slug: 'get_vehicle_assignment',
+      //   description: 'Gunakan Tools ini untuk mengetahui data rental kendaraan yang sedang disewa, setatus kendaraan.',
+      //   method: 'GET',
+      //   url: `https://api.sevaqu.com/api/v2/service_vehicle/vehicle-assignments/ai-summary`,
+      //   authType: 'none',
 
-        headers: null,
+      //   headers: null,
 
-        authConfig: JSON.stringify({
-          in: 'header',
-          key: 'Authorization',
-          value: '${BEARER_TOKEN}'
-        }),
+      //   authConfig: JSON.stringify({
+      //     in: 'header',
+      //     key: 'Authorization',
+      //     value: '${BEARER_TOKEN}'
+      //   }),
 
-        bodyTemplate: null,
+      //   bodyTemplate: null,
 
-        tags: ['kendaraan', 'vehicle', 'rental'],
+      //   tags: ['kendaraan', 'vehicle', 'rental'],
 
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }
+      //   isActive: true,
+      //   createdAt: now,
+      //   updatedAt: now,
+      // }
     ])
   },
 
