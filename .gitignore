@@ -85,6 +85,9 @@ dist
 !readme.md
 !Readme.md
 
+# Keep VIPER identity document (used by greeting skill + general chat at runtime)
+!VIPER-IDENTITY.md
+
 # Keep documentation in src/ directory
 src/**/*.md
 
