@@ -181,6 +181,8 @@ function isIdentityQuestion(text: string): boolean {
     /\b(bagaimana|gimana|how)\s+.+\s+(anda|kamu|you)\b/i.test(n) ||
     /\b(jelaskan|jelasin|explain|describe|tell me about)\s+(dirimu|tentang kamu|tentang anda|arsitekturmu|yourself|your architecture)\b/i.test(n) ||
     /\b(apakah\s+(anda|kamu)\s+(manusia|robot|ai|bot|asli|program)|are\s+you\s+(human|real|a robot|ai|a bot))\b/i.test(n) ||
+    /\b(apa|apakah)\s+(anda|kamu|you)\s+(punya|bisa|memiliki|have|has|can)\s+(memory|ingatan|konteks|riwayat|sejarah|context|history|kemampuan|capabilit)/i.test(n) ||
+    /\b(kamu|anda|you)\s+(punya|bisa|memiliki|have|has|can)\s+(memory|ingatan|konteks|riwayat|sejarah|context|history)\b/i.test(n) ||
     /^(siapa kamu|siapa anda|who are you|kenalan dong|introduce yourself|perkenalkan dirimu)$/i.test(n)
   );
 }

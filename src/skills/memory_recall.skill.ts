@@ -11,7 +11,7 @@ import { memoryRecallService } from '../services/memory-recall.service';
 export const memoryRecallSkill: InternalSkillMetadata = {
   name: 'Memory Recall',
   slug: 'memory_recall',
-  description: 'Mengingat dan merangkum riwayat percakapan atau pertanyaan user sebelumnya',
+  description: 'Memory untuk mengingat dan merangkum riwayat percakapan atau pertanyaan user sebelumnya',
   handlerKey: 'handleMemoryRecall',
   version: '1.0.0',
   tags: ['memory', 'recall', 'history', 'conversation', 'context', 'riwayat'],
@@ -34,7 +34,15 @@ export const memoryRecallSkill: InternalSkillMetadata = {
       'pernah dibahas',
       'topik terakhir',
       'tanyakan',
-      'bahas'
+      'bahas',
+      'isi memory',
+      'isi ingatan',
+      'isi memori',
+      'apa yang diingat',
+      'apa yang disimpan',
+      'memory anda',
+      'ingatan anda',
+      'memori anda'
     ],
     context: ['memory_retrieval', 'conversation_history'],
     priority: 9,

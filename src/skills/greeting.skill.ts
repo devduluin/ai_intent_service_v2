@@ -532,6 +532,17 @@ function detectGreetingInput(query: string): GreetingInputType {
   if (/^(siapa kamu|siapa anda|who are you|what are you|kenalan dong|introduce yourself|perkenalkan dirimu|ceritakan tentang dirimu|tell me about yourself)$/i.test(normalized)) {
     return 'identity_request';
   }
+  // Self-capability: "apa anda punya memory?", "apa isi memory anda?", "kamu bisa ingat?"
+  if (/\b(apa|apakah)\s+(anda|kamu|lo|elu)\s+(punya|bisa|memiliki|mempunyai|have|has|can)\s+(memory|ingatan|konteks|riwayat|sejarah|context|history|kemampuan|capabilit)/i.test(normalized)) {
+    return 'identity_request';
+  }
+  if (/\b(kamu|anda|you)\s+(punya|bisa|memiliki|mempunyai|have|has|can)\s+(memory|ingatan|konteks|riwayat|sejarah|context|history)\b/i.test(normalized)) {
+    return 'identity_request';
+  }
+  // "apa isi memory anda?", "apa wujud kemampuanmu?", "apa ingatanmu?"
+  if (/\b(apa|apakah|what)\s+(wujud|bentuk|kemampuan|kapabilitas|contents?|capabilit)\s+(anda|kamu|mu|lo|elu|you|your)\b/i.test(normalized)) {
+    return 'identity_request';
+  }
 
   if (/^(halo|hai|hei|hello|hi|pagi|siang|sore|malam|selamat pagi|selamat siang|selamat sore|selamat malam|apa kabar)$/.test(normalized)) {
     return 'greeting';
