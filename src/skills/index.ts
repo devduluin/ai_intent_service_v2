@@ -35,13 +35,18 @@ export async function initializeInternalSkills(): Promise<void> {
       let skillModule: any;
       
       try {
-        // Try filename first (e.g., xls.skill.ts)
         skillModule = await import(`./${skill.slug}.skill`);
-      } catch (importError) {
-        // If slug doesn't match filename, try to find by searching
-        // For now, use handlerKey to construct filename
-        const filename = skill.slug.replace('_generator', '').replace('_analyzer', '');
-        skillModule = await import(`./${filename}.skill`);
+      } catch {
+        try {
+          skillModule = await import(`./${skill.slug}.skill.js`);
+        } catch {
+          const filename = skill.slug.replace('_generator', '').replace('_analyzer', '');
+          try {
+            skillModule = await import(`./${filename}.skill`);
+          } catch {
+            skillModule = null;
+          }
+        }
       }
       
       const handler = skillModule.default?.handler || skillModule[`handle${capitalize(skill.slug)}`];

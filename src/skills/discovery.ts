@@ -32,7 +32,7 @@ export async function discoverInternalSkills(): Promise<InternalSkillMetadata[]>
     
     for (const file of files) {
       // Skip non-skill files
-      if (!file.endsWith('.skill.ts') || file.startsWith('index.')) {
+      if (!file.endsWith('.skill.ts') && !file.endsWith('.skill.js') || file.startsWith('index.') || file === 'discovery.js' || file === 'discovery.ts') {
         continue;
       }
       
