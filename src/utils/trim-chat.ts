@@ -1,48 +1,75 @@
+import type { ChatMessage } from '../types'
 // ============================================================
-// 🧠 CHAT HISTORY TRIMMER (MESSAGE + LENGTH BASED)
+// 🧠 CHAT HISTORY TRIMMER
 // Menghemat token dengan:
 // 1. Membatasi jumlah message terakhir
-// 2. Membatasi panjang isi tiap message
+// 2. Membatasi panjang isi message
+// 3. Filter berdasarkan role
 // ============================================================
 
-export interface ChatHistoryItem {
-  role: 'user' | 'assistant' | string
-  content: string
-}
-
 interface TrimOptions {
-  maxMessages?: number   // jumlah message terakhir
-  maxLength?: number     // panjang karakter per message
+  maxMessages?: number
+  maxLength?: number
+  filterRole?: string | string[]
 }
 
 export function trimChatHistory(
-  history: ChatHistoryItem[] = [],
+  history: ChatMessage[] = [],
   options: TrimOptions = {}
-): ChatHistoryItem[] {
+): ChatMessage[] {
 
   const {
-    maxMessages = 10,   // default simpan 10 message terakhir
-    maxLength = 128     // default max 128 char per message
+    maxMessages = 10,
+    maxLength = 128,
+    filterRole
   } = options
 
   if (!history.length) return []
 
-  // 1️⃣ Ambil message terakhir
-  const sliced = history.slice(-maxMessages)
+  // ============================================================
+  // Normalize filter role
+  // ============================================================
 
-  // 2️⃣ Potong isi tiap message
-  const trimmed = sliced.map(msg => {
+  const allowedRoles = filterRole
+    ? Array.isArray(filterRole)
+      ? filterRole
+      : [filterRole]
+    : null
+
+  // ============================================================
+  // Filter role jika ada
+  // ============================================================
+
+  const filtered = allowedRoles
+    ? history.filter(msg => allowedRoles.includes(msg.role))
+    : history
+
+  // ============================================================
+  // Ambil message terakhir
+  // Tetap mempertahankan urutan asli:
+  // lama -> terbaru
+  // ============================================================
+
+  const sliced = filtered.slice(-maxMessages)
+
+  // ============================================================
+  // Trim content
+  // ============================================================
+
+  return sliced.map(msg => {
     let content = msg.content || ''
 
     if (content.length > maxLength) {
-      content = content.substring(0, maxLength).trim() + '…'
+      content =
+        content.substring(0, maxLength).trim() + '…'
     }
 
     return {
-      role: msg.role === 'user' ? 'user' : 'assistant',
+      role: msg.role === 'user'
+        ? 'user'
+        : 'assistant',
+
       content
     }
   })
-
-  return trimmed
 }

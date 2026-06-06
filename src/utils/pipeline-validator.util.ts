@@ -30,8 +30,15 @@ export class PipelineValidator {
     }
 
     return toolParams
-      .filter(p => p.isRequired && !collectedParams[p.name])
+      .filter(p => p.isRequired && !this.validateParamValue(p, collectedParams[p.name]))
       .map(p => p.name);
+  }
+
+  static isMeaningfulValue(value: unknown): boolean {
+    return value !== undefined
+      && value !== null
+      && value !== 'null'
+      && !(typeof value === 'string' && value.trim() === '');
   }
 
   /**
@@ -78,7 +85,7 @@ export class PipelineValidator {
    * Validate if a value matches the expected parameter type
    */
   static validateParamValue(param: ToolParam, value: unknown): boolean {
-    if (value === undefined || value === null) {
+    if (!this.isMeaningfulValue(value)) {
       return false;
     }
 
@@ -88,11 +95,62 @@ export class PipelineValidator {
 
       case 'number':
         const num = Number(value);
-        return !isNaN(num);
+        if (isNaN(num)) return false;
+        
+        // Check range if config exists
+        if (param.config?.min !== undefined && num < param.config.min) return false;
+        if (param.config?.max !== undefined && num > param.config.max) return false;
+        
+        return true;
 
       case 'boolean':
         return typeof value === 'boolean' ||
                ['true', 'false', '1', '0', 'yes', 'no'].includes(String(value).toLowerCase());
+
+      case 'date':
+        const dateStr = String(value);
+        // Check if it's a valid date
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return false;
+        
+        // Check min/max date if specified
+        if (param.config?.minDate) {
+          const minDate = new Date(param.config.minDate);
+          if (date < minDate) return false;
+        }
+        if (param.config?.maxDate) {
+          const maxDate = new Date(param.config.maxDate);
+          if (date > maxDate) return false;
+        }
+        
+        return true;
+
+      case 'email':
+        const email = String(value);
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+
+      case 'phone':
+        const phone = String(value);
+        // Basic phone validation (can be customized per region)
+        const phoneRegex = /^[\d\s\-\+\(\)]{8,20}$/;
+        return phoneRegex.test(phone);
+
+      case 'select':
+        const selectedValue = String(value);
+        if (param.config?.options) {
+          return param.config.options.some(opt => opt.value === selectedValue);
+        }
+        return true; // No options defined, accept any value
+
+      case 'multiselect':
+        const values = Array.isArray(value) ? value : [value];
+        if (param.config?.options) {
+          return values.every(v => 
+            param.config?.options?.some(opt => opt.value === String(v))
+          );
+        }
+        return true;
 
       default:
         return true;

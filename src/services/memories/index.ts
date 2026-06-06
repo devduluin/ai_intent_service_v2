@@ -15,4 +15,4 @@ export { episodicMemoryService } from '../episodic-memory.service';
 export { workingMemoryService } from '../workingMemory.service';
 
 // Re-export types for convenience
-export type { WorkingMemoryData as WorkingMemoryDataType } from '../workingMemory.service';
+export type { WorkingMemoryData as WorkingMemoryDataType } from '../../types/working-memory.type';

@@ -3,6 +3,15 @@ import { Op } from 'sequelize';
 import { EpisodicMemoryModel } from '../database/models/episodic-memory.model';
 import type { EpisodicMemory } from '../types/episodic-memory.types';
 import type { PlannerOutput } from '../types/planner.types';
+import type { EpisodicFlowTraceItem, EpisodicMemoryWriteContext } from '../types/episodic-memory-write.types';
+import { appLogger } from '../utils/logger.util';
+import { config } from '../config';
+
+// ============================================================
+// Constants
+// ============================================================
+
+export const MAX_SLOTS_PER_USER = config.memory.maxRowMemoryPerUser;
 
 export class EpisodicMemoryRepository {
   /**
@@ -16,6 +25,13 @@ export class EpisodicMemoryRepository {
       intent: data.intent,
       summary: data.summary,
       toolsUsed: data.toolsUsed || null,
+      topicKey: data.topicKey || data.intent,
+      topicLabel: data.topicLabel || null,
+      flowStage: data.flowStage || null,
+      taskPlan: data.taskPlan || data.toolsUsed || null,
+      flowTrace: data.flowTrace || null,
+      rerunnable: data.rerunnable ?? (!!(data.taskPlan?.tasks?.length)),
+      memoryMeta: data.memoryMeta || null,
     });
 
     return this.toResponse(memory);
@@ -38,6 +54,12 @@ export class EpisodicMemoryRepository {
       intent: data.intent ?? memory.intent,
       summary: data.summary ?? memory.summary,
       toolsUsed: data.toolsUsed !== undefined ? data.toolsUsed : memory.toolsUsed,
+      topicKey: data.topicKey !== undefined ? data.topicKey : memory.topicKey,
+      topicLabel: data.topicLabel !== undefined ? data.topicLabel : memory.topicLabel,
+      flowStage: data.flowStage !== undefined ? data.flowStage : memory.flowStage,
+      taskPlan: data.taskPlan !== undefined ? data.taskPlan : memory.taskPlan,
+      flowTrace: data.flowTrace !== undefined ? data.flowTrace : memory.flowTrace,
+      memoryMeta: data.memoryMeta !== undefined ? data.memoryMeta : memory.memoryMeta,
       updated_at: new Date(),
     });
 
@@ -55,6 +77,13 @@ export class EpisodicMemoryRepository {
       level: EpisodicMemory['level'];
       summary: string;
       toolsUsed?: PlannerOutput | null;
+      topicKey?: string | null;
+      topicLabel?: string | null;
+      flowStage?: string | null;
+      taskPlan?: PlannerOutput | null;
+      flowTrace?: EpisodicFlowTraceItem[] | null;
+      rerunnable?: boolean;
+      memoryMeta?: Record<string, unknown> | null;
     }
   ): Promise<EpisodicMemory> {
     // Find existing memory for this user+app+intent
@@ -70,7 +99,13 @@ export class EpisodicMemoryRepository {
       // Update existing
       await existing.update({
         summary: data.summary,
-        toolsUsed: data.toolsUsed ?? existing.toolsUsed,
+        toolsUsed: data.toolsUsed ?? data.taskPlan ?? existing.toolsUsed,
+        topicKey: data.topicKey ?? existing.topicKey ?? intentSlug,
+        topicLabel: data.topicLabel ?? existing.topicLabel,
+        flowStage: data.flowStage ?? existing.flowStage,
+        taskPlan: data.taskPlan ?? data.toolsUsed ?? existing.taskPlan,
+        flowTrace: data.flowTrace ?? existing.flowTrace,
+        memoryMeta: data.memoryMeta ?? existing.memoryMeta,
         updated_at: new Date(),
       });
 
@@ -84,7 +119,14 @@ export class EpisodicMemoryRepository {
       level: data.level,
       intent: intentSlug,
       summary: data.summary,
-      toolsUsed: data.toolsUsed || null,
+      toolsUsed: data.toolsUsed || data.taskPlan || null,
+      topicKey: data.topicKey || intentSlug,
+      topicLabel: data.topicLabel || null,
+      flowStage: data.flowStage || null,
+      taskPlan: data.taskPlan || data.toolsUsed || null,
+      flowTrace: data.flowTrace || null,
+      rerunnable: data.rerunnable ?? (!!(data.taskPlan?.tasks?.length)),
+      memoryMeta: data.memoryMeta || null,
     });
 
     return this.toResponse(memory);
@@ -248,6 +290,61 @@ export class EpisodicMemoryRepository {
   }
 
   /**
+   * Get memories for user+app within a date range, ordered newest first.
+   */
+  async findByDateRange(
+    userId: string,
+    appName: string,
+    start: Date,
+    end: Date,
+    limit = 10
+  ): Promise<EpisodicMemory[]> {
+    const memories = await EpisodicMemoryModel.findAll({
+      where: {
+        user_id: userId,
+        app_name: appName,
+        created_at: {
+          [Op.between]: [start, end],
+        },
+      },
+      order: [['created_at', 'DESC']],
+      limit,
+    });
+
+    return memories.map((m) => this.toResponse(m));
+  }
+
+  /**
+   * Get recent memories by lightweight topic match.
+   */
+  async findRecentByTopic(
+    userId: string,
+    appName: string,
+    topic: string,
+    limit = 10
+  ): Promise<EpisodicMemory[]> {
+    const normalizedTopic = topic.trim();
+    if (!normalizedTopic) {
+      return this.findByUserAndApp(userId, appName, limit);
+    }
+
+    const memories = await EpisodicMemoryModel.findAll({
+      where: {
+        user_id: userId,
+        app_name: appName,
+        [Op.or]: [
+          { intent: { [Op.iLike]: `%${normalizedTopic}%` } },
+          { summary: { [Op.iLike]: `%${normalizedTopic}%` } },
+        ],
+      },
+      order: [['created_at', 'DESC']],
+      limit,
+    });
+
+    return memories.map((m) => this.toResponse(m));
+  }
+
+  /**
    * Get aggregated tool usage from memories
    */
   async getAggregatedToolUsage(
@@ -264,7 +361,7 @@ export class EpisodicMemoryRepository {
 
     const allTasks: Array<{
       id: string;
-      resource: 'tool' | 'handler' | 'knowledge';
+      resource: 'tool' | 'skill' | 'knowledge';
       key: string;
       depends_on: string[];
     }> = [];
@@ -318,6 +415,13 @@ export class EpisodicMemoryRepository {
       intent: memory.intent,
       summary: memory.summary,
       toolsUsed: memory.toolsUsed as PlannerOutput | undefined,
+      topicKey: memory.topicKey,
+      topicLabel: memory.topicLabel,
+      flowStage: memory.flowStage,
+      taskPlan: memory.taskPlan as PlannerOutput | null,
+      flowTrace: memory.flowTrace as EpisodicFlowTraceItem[] | null,
+      rerunnable: memory.rerunnable ?? false,
+      memoryMeta: memory.memoryMeta as Record<string, unknown> | null,
       created_at: memory.created_at,
     };
   }

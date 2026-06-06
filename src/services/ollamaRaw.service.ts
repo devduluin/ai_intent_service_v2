@@ -27,29 +27,17 @@ class OllamaService {
     const res = await this.post(config.ollama.baseUrlRaw+'/embeddings', {
       model: config.ollama.embedModel,
       prompt: text,
-    })
+    }) as any;
 
     // console.log('EMBED RAW RESPONSE:', JSON.stringify(res, null, 2))
 
-    return res.embedding
+    return res?.embedding || [];
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    return Promise.all(texts.map(t => this.embed(t)))
+    return Promise.all(texts.map(t => this.embed(t)));
   }
 
-  // =============================
-  // CHAT VIA API GATEWAY
-  // =============================
-  async chat(messages: any[]): Promise<string> {
-    const res = await this.post(config.ollama.baseUrlRaw+'/chat', {
-      model: config.ollama.llmModel,
-      messages,
-      stream: false,
-    })
-
-    return res.message?.content || res.response || ''
-  }
 
   // =============================
   // HEALTH CHECK

@@ -38,22 +38,6 @@ export class IntentRepository {
     return rows.map((row) => this.toIntent(row))
   }
 
-  async findHandlersActive({ agentId = null }: { agentId?: string | null }): Promise<Intent[]> {
-    const whereClause: any = { isActive: true, executionType: 'handler' }
-
-    if (agentId !== null && agentId !== undefined) {
-      whereClause.agentId = agentId
-    }
-
-    const rows = await IntentModel.findAll({
-      where: whereClause,
-      include: this.getFullInclude(),
-      order: [['id', 'ASC']],
-    })
-
-    return rows.map((row) => this.toIntent(row))
-  }
-
   // ============================================================
   // FIND BY SLUG
   // ============================================================
@@ -71,6 +55,39 @@ export class IntentRepository {
     })
 
     return row ? this.toIntent(row) : null
+  }
+
+  async findByToolSlug(toolSlug: string, agentId?: string): Promise<Intent | null> {
+    const row = await IntentModel.findOne({
+      where: {
+        isActive: true,
+        ...(agentId ? { agentId } : {}),
+      },
+      include: [
+        {
+          model: IntentToolMappingModel,
+          as: 'toolMappings',
+          required: true,
+          include: [
+            {
+              model: ToolModel,
+              as: 'tool',
+              required: true,
+              where: { slug: toolSlug },
+              include: [
+                {
+                  model: ToolParameterModel,
+                  as: 'parameters',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      order: [['id', 'ASC']],
+    });
+
+    return row ? this.toIntent(row) : null;
   }
 
   // ============================================================
@@ -120,7 +137,7 @@ export class IntentRepository {
       agentId: row.agentId,
 
       executionType: row.executionType,
-      handlerKey: row.executionType === 'handler' ? row.handlerKey : undefined,
+      handlerKey: undefined,
 
       // ✔ FIX → string[]
       examples: (row.examples ?? []).map((e: any) => e.text),
@@ -193,6 +210,10 @@ export class IntentRepository {
       defaultValue: p.defaultValue,
       required: p.isRequired,
       extractPrompt: p.extractPrompt ?? undefined,
+      label: p.label,
+      config: p.config,
+      order: p.order ?? 0,
+      isHidden: p.isHidden ?? false,
     }))
   }
 

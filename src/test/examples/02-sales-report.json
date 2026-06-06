@@ -1,0 +1,41 @@
+{
+  "example": "Sales Report - With Parameters",
+  "request": {
+    "user_id": "user_1",
+    "app_name": "hris",
+    "text": "Penjualan minggu ini di Surabaya",
+    "language": "id",
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "Halo"
+      },
+      {
+        "role": "assistant",
+        "content": "Halo! Saya adalah AI Assistant untuk HRIS. Ada yang bisa saya bantu?"
+      }
+    ],
+    "attributes": {
+      "name": "Ardi Mahendra",
+      "params": {
+        "employee_id": "c0c82cb7-97d6-45c2-a1b4-41b45ab6c169"
+      }
+    }
+  },
+  "response": {
+    "success": true,
+    "response": "Total penjualan minggu ini di Surabaya adalah Rp 124 juta, dengan pertumbuhan 15% dibanding minggu lalu.",
+    "intent": "sales_report",
+    "confidence": 0.94,
+    "metadata": {
+      "executionTime": 342,
+      "stage": "naturalization",
+      "source": "tool_execution",
+      "toolsUsed": ["sales_api"],
+      "parameters": {
+        "location": "Surabaya",
+        "timeframe": "minggu_ini"
+      }
+    }
+  }
+}

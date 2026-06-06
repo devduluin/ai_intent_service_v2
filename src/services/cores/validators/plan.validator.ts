@@ -64,7 +64,7 @@ export class PlanValidator {
     // Validate task structure
     if (plan.tasks && plan.tasks.length > 0) {
       plan.tasks.forEach((task, index) => {
-        if (!task.resource || !['handler', 'tool', 'knowledge'].includes(task.resource)) {
+        if (!task.resource || !['skill', 'tool', 'knowledge'].includes(task.resource)) {
           errors.push(`Task ${index}: invalid resource type`);
         }
         if (!task.key) {
@@ -139,7 +139,7 @@ export class PlanValidator {
     }
 
     return plan.tasks.some(t => 
-      t.resource === 'handler' || 
+      t.resource === 'skill' || 
       t.resource === 'tool' || 
       t.resource === 'knowledge'
     );

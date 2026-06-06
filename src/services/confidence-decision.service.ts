@@ -3,15 +3,15 @@ import { UserMessageSignals } from "../services/query-decomposition.service"
 
 export interface ConfidenceDecision {
   confidence: number
-  action: 'execute_tools' | 'execute_handler' | 'clarify' | 'chat'
+  action: 'execute_tools' | 'execute_skill' | 'clarify' | 'chat'
   // C-009 FIX: Resource type breakdown for planner feedback
   resourceBreakdown: {
     tools: number
-    handlers: number
+    skills: number
     knowledge: number
   }
   // Recommended primary resource type based on confidence analysis
-  recommendedResource?: 'tool' | 'handler' | 'knowledge'
+  recommendedResource?: 'tool' | 'skill' | 'knowledge'
 }
 
 export interface ConfidenceDecisionInput {
@@ -45,21 +45,21 @@ class ConfidenceDecisionService {
     // ======================================================
     // 1️⃣ DETERMINISTIC HANDLER LANE (NO SCORING)
     // ======================================================
-    const hasOnlyHandlers =
+    const hasOnlySkills =
       plan.tasks.length > 0 &&
-      plan.tasks.every(task => task.resource === 'handler') &&
+      plan.tasks.every(task => task.resource === 'skill') &&
       plan.chat === false
 
-    if (hasOnlyHandlers) {
+    if (hasOnlySkills) {
       return {
         confidence: 0.95,
-        action: 'execute_handler',
+        action: 'execute_skill',
         resourceBreakdown: {
           tools: 0,
-          handlers: plan.tasks.length,
+          skills: plan.tasks.length,
           knowledge: 0
         },
-        recommendedResource: 'handler'
+        recommendedResource: 'skill'
       }
     }
 
@@ -82,7 +82,7 @@ class ConfidenceDecisionService {
           action: 'chat',
           resourceBreakdown: {
             tools: 0,
-            handlers: 0,
+            skills: 0,
             knowledge: 0
           },
           recommendedResource: undefined
@@ -95,7 +95,7 @@ class ConfidenceDecisionService {
         action: 'chat',
         resourceBreakdown: {
           tools: 0,
-          handlers: 0,
+          skills: 0,
           knowledge: 0
         },
         recommendedResource: undefined
@@ -136,24 +136,24 @@ class ConfidenceDecisionService {
     // C-009 FIX: Resource type breakdown for planner feedback
     const resourceBreakdown = {
       tools: plan.tasks.filter(t => t.resource === 'tool').length,
-      handlers: plan.tasks.filter(t => t.resource === 'handler').length,
+      skills: plan.tasks.filter(t => t.resource === 'skill').length,
       knowledge: plan.tasks.filter(t => t.resource === 'knowledge').length
     }
 
     // Recommend primary resource type based on confidence and resource breakdown
     let recommendedResource: ConfidenceDecision['recommendedResource']
     
-    // If plan has only handlers, recommend handler
-    if (resourceBreakdown.handlers > 0 && resourceBreakdown.tools === 0 && resourceBreakdown.knowledge === 0) {
-      recommendedResource = 'handler'
+    // If plan has only skills, recommend skill
+    if (resourceBreakdown.skills > 0 && resourceBreakdown.tools === 0 && resourceBreakdown.knowledge === 0) {
+      recommendedResource = 'skill'
     } else if (resourceBreakdown.tools > 0 && confidence >= 0.70) {
       recommendedResource = 'tool'  // High confidence + tools = tool is primary
     } else if (resourceBreakdown.knowledge > 0 && confidence >= 0.60) {
       recommendedResource = 'knowledge'
     } else if (resourceBreakdown.tools > 0) {
       recommendedResource = 'tool'
-    } else if (resourceBreakdown.handlers > 0) {
-      recommendedResource = 'handler'
+    } else if (resourceBreakdown.skills > 0) {
+      recommendedResource = 'skill'
     } else if (resourceBreakdown.knowledge > 0) {
       recommendedResource = 'knowledge'
     }

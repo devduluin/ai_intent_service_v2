@@ -1,6 +1,6 @@
 import { ollamaService } from './ollama.service'
 import { openAiService } from './openAi.service'
-import type { Intent, Tool, ToolParam, PipelineInput } from '../types'
+import type { Intent, Tool, ToolParam, PipelineInput, ResourceMissingParams } from '../types'
 import type { Agent } from '../types/agent.types'
 import { config } from '../config'
 
@@ -11,12 +11,12 @@ class ClarificationService {
   // =========================================================
   private async generate(provider: string, llmModel: string, prompt: string, options?: { num_predict?: number }) {
     // Pilih service berdasarkan config.default.provider
-
+    
     if (provider === 'qwen') {
       const response = await openAiService.chat(provider, llmModel,
          prompt,
         {
-          temperature: 0.2,
+          temperature: 0.1,
           num_predict: options?.num_predict ?? 64,
         }
       )
@@ -35,6 +35,50 @@ class ClarificationService {
     }
   }
 
+  private buildTypeHint(paramDef?: ToolParam): string {
+    const paramType = paramDef?.type || 'string'
+
+    if (paramType === 'date') {
+      return paramDef?.config?.format ? `(format: ${paramDef.config.format})` : '(tanggal)'
+    }
+
+    if (paramType === 'email') {
+      return '(alamat email)'
+    }
+
+    if (paramType === 'phone') {
+      return '(nomor telepon)'
+    }
+
+    if (paramType === 'select' && paramDef?.config?.options) {
+      const options = paramDef.config.options.map(o => o.label).join(' atau ')
+      return `(${options})`
+    }
+
+    if (paramType === 'boolean') {
+      return '(ya atau tidak)'
+    }
+
+    if (paramType === 'number') {
+      return '(angka)'
+    }
+
+    return ''
+  }
+
+  private getModel(agent: Agent): { provider: string; llmModel: string } {
+    return {
+      provider: agent.llmModel?.provider || config.default?.provider || 'ollama',
+      llmModel: agent.llmModel?.modelCode || config.ollama?.llmModel
+    }
+  }
+
+  private getUserContext(input: PipelineInput): string {
+    const userName = input.attributes?.name as string ?? ''
+    const firstName = userName.split(' ')[0]
+    return firstName ? `Nama pengguna: "${firstName}"` : ''
+  }
+
   // =========================================================
   // 1️ Ask for single parameter from a TOOL
   // =========================================================
@@ -47,23 +91,61 @@ class ClarificationService {
     paramDef?: ToolParam,
     language = 'Indonesia'
   ): Promise<string> {
+    // Use label if available, fallback to name
+    const paramLabel = paramDef?.label || paramDef?.name || paramName
     const paramDescription = paramDef?.description || paramName
-    const userName = input.attributes?.name as string ?? ''
-    const firstName = userName.split(' ')[0]
-    const userContext = firstName 
-    ? `Nama pengguna: "${firstName}"` 
-    : '';
+    const typeHint = this.buildTypeHint(paramDef)
+    const userContext = this.getUserContext(input)
+    
     const prompt = `
 ${userContext}
 Kamu sedang membantu user menggunakan tool "${tool.name}".
 
-Tool ini membutuhkan parameter "${paramName}" (${paramDescription}).
+Tool ini membutuhkan parameter "${paramLabel}" ${typeHint} - ${paramDescription}.
 
-Buat 1 pertanyaan singkat dan natural dalam bahasa ${language} 
+Buat 1 pertanyaan singkat dan natural dalam bahasa ${language}
 untuk meminta parameter tersebut.
 
 Aturan Ketat:
-1. Jawaban HARUS 1 kalimat pendek saja.
+1. Jawaban HARUS 2 kalimat pendek saja.
+2. Beri sapaan hanya jika ada nama pengguna.
+    `.trim()
+
+
+
+    return this.generate(provider, llmModel, prompt)
+  }
+
+  // =========================================================
+  // 1.5 Ask for single parameter from any RESOURCE
+  // =========================================================
+  async askForParameterFromResource(
+    provider: string,
+    llmModel: string,
+    input: PipelineInput,
+    resource: ResourceMissingParams,
+    paramName: string,
+    paramDef?: ToolParam,
+    language = 'Indonesia'
+  ): Promise<string> {
+    const paramLabel = paramDef?.label || paramDef?.name || paramName
+    const paramDescription = paramDef?.description || paramName
+    const typeHint = this.buildTypeHint(paramDef)
+    const userContext = this.getUserContext(input)
+    const resourceType = resource.resource === 'skill' ? 'skill internal' : 'tool'
+    const resourceName = resource.name || resource.key
+
+    const prompt = `
+${userContext}
+Kamu sedang membantu user menggunakan ${resourceType} "${resourceName}".
+
+Resource ini membutuhkan parameter "${paramLabel}" ${typeHint} - ${paramDescription}.
+
+Buat 1 pertanyaan singkat dan natural dalam bahasa ${language}
+untuk meminta parameter tersebut.
+
+Aturan Ketat:
+1. Jawaban HARUS 2 kalimat pendek saja.
 2. Beri sapaan hanya jika ada nama pengguna.
     `.trim()
 
@@ -72,47 +154,64 @@ Aturan Ketat:
 
   // =========================================================
   // 2️ Ask for multiple parameters from MULTIPLE TOOLS
-  // =========================================================
+  // ==============================================;===========
   async askForMultipleParametersFromTools(
     agent: Agent,
     input: PipelineInput,
     missingToolsParams: Array<{ tool: Tool; missing: string[] }>,
     language = 'Indonesia'
   ): Promise<string> {
+    const resources: ResourceMissingParams[] = missingToolsParams.map(item => ({
+      resource: 'tool',
+      key: item.tool.slug,
+      name: item.tool.name,
+      missing: item.missing,
+      params: item.tool.parameters || []
+    }))
+
+    return this.askForMultipleParametersFromResources(agent, input, resources, language)
+  }
+
+  // =========================================================
+  // 2.5 Ask for multiple parameters from TOOL/SKILL resources
+  // =========================================================
+  async askForMultipleParametersFromResources(
+    agent: Agent,
+    input: PipelineInput,
+    missingResourceParams: ResourceMissingParams[],
+    language = 'Indonesia'
+  ): Promise<string> {
     // Flatten dan deduplicate semua missing params
-    const allMissing = missingToolsParams.flatMap(m => m.missing)
+    const allMissing = missingResourceParams.flatMap(m => m.missing)
     const uniqueMissing = [...new Set(allMissing)]
-
-     const provider = agent.llmModel?.provider || config.default?.provider || 'ollama'
-
-    const llmModel = agent.llmModel?.modelCode || config.ollama?.llmModel
-    console.log(`[Clarification] Agent: ${agent.llmModel?.modelCode}`)
+    const { provider, llmModel } = this.getModel(agent)
     
-    // Case 1: Hanya 1 parameter yang missing dari 1 tool
-    if (uniqueMissing.length === 1 && missingToolsParams.length === 1) {
-      const tool = missingToolsParams[0].tool
+    // Case 1: Hanya 1 parameter yang missing dari 1 resource
+    if (uniqueMissing.length === 1 && missingResourceParams.length === 1) {
+      const resource = missingResourceParams[0]
       const paramName = uniqueMissing[0]
-      const paramDef = tool.parameters?.find(p => p.name === paramName)
+      const paramDef = resource.params?.find(p => p.name === paramName)
       
-      return this.askForParameterFromTool(provider, llmModel, input, tool, paramName, paramDef, language)
+      return this.askForParameterFromResource(provider, llmModel, input, resource, paramName, paramDef, language)
     }
     
-    // Case 2: Multiple parameters dari multiple tools
-    const toolsList = missingToolsParams.map(m => m.tool.name).join(' dan ')
-    
-    const userName = input.attributes?.name as string ?? ''
-    const firstName = userName.split(' ')[0]
-    const userContext = firstName 
-    ? `Nama pengguna: "${firstName}"` 
-    : '';
+    // Case 2: Multiple parameters dari multiple resources
+    const resourcesList = missingResourceParams
+      .map(m => `${m.resource === 'skill' ? 'skill' : 'tool'} ${m.name || m.key}`)
+      .join(' dan ')
+    const paramLabels = uniqueMissing.map(paramName => {
+      const resource = missingResourceParams.find(item => item.missing.includes(paramName))
+      const paramDef = resource?.params?.find(p => p.name === paramName)
+      return paramDef?.label || paramDef?.description || paramName
+    })
+    const userContext = this.getUserContext(input)
     
     const prompt = `
 ${userContext}
-User perlu memberikan parameter: ${uniqueMissing.join(', ')} 
-untuk menjalankan tools: ${toolsList}
+User perlu memberikan parameter: ${paramLabels.join(', ')} 
+untuk menjalankan resource: ${resourcesList}
 
-Buat 1 pertanyaan singkat dalam bahasa ${language} yang meminta SEMUA parameter di atas sekaligus.
-Contoh: "Untuk mengecek cuaca dan waktu, di kota mana dan jam berapa?"
+Buat 2 pertanyaan singkat dalam bahasa ${language} yang meminta SEMUA parameter di atas sekaligus.
 
 Rules:
 - Maksimal 15 kata
@@ -126,24 +225,29 @@ Rules:
   // =========================================================
   // 3 Ambiguous intent clarification
   // =========================================================
-//   async askForAmbiguousIntent(
-//     userText: string,
+//   async askForAmbiguousPlan(
+//     agent: Agent,
+//     input: PipelineInput,
 //     matches: Array<{ intent: Intent; score: number }>,
 //     language = 'Indonesia'
 //   ): Promise<string> {
+//     const provider = agent.llmModel?.provider || config.default?.provider || 'ollama'
+
+//     const llmModel = agent.llmModel?.modelCode || config.ollama?.llmModel
+    
 //     const options = matches.slice(0, 3).map((m, i) => `${i + 1}. ${m.intent.name}`).join('\n')
     
 //     const prompt = `
-// User bertanya: "${userText}"
+// User bertanya: "${input.text}"
 
-// Intent yang terdeteksi:
+// Resources yang terdeteksi:
 // ${options}
 
-// Buat pertanyaan klarifikasi singkat dalam bahasa ${language} untuk memilih intent mana yang dimaksud user.
+// Buat pertanyaan klarifikasi singkat dalam bahasa ${language} untuk memilih resources mana yang dimaksud user.
 // Maksimal 1 kalimat.
 //     `.trim()
     
-//     return this.generate(prompt, { num_predict: 80 })
+//     return this.generate(provider, llmModel, prompt, { num_predict: 80 })
 //   }
 
   // =========================================================

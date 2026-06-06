@@ -1,21 +1,16 @@
 import { intentRegistry } from '../services/intent-registry.service'
 // import { weatherIntent, handleGetWeather } from './weather.intent'
 // Import intent baru di sini ↓
-import { handleGreeting, greetingHandlerKey } from './greeting.intent'
-import { handleGenerateXls, xlsHandlerKey } from './xls.intent'
-// import { productIntent, handleProduct } from './product.intent'
 
 // ============================================================
-// Daftarkan semua intent ke registry
+// INTENTS INITIALIZATION
 // ============================================================
-export async function registerAllIntents(): Promise<void> {
+// Sync intents from database (DB-based routing)
+// ============================================================
 
-  // 1. register handler CODE FIRST
-  intentRegistry.registerHandler(greetingHandlerKey, handleGreeting)
-  intentRegistry.registerHandler(xlsHandlerKey, handleGenerateXls)
-
-  // 2. sync DB INTENTS
+export async function initializeIntents(): Promise<void> {
+  // Sync DB intents
   await intentRegistry.syncFromDatabase();
 
-  console.log(`✓ Registered ${intentRegistry.getAll().length} intents`)
+  console.log(`✓ Synced ${intentRegistry.getAll().length} intents from DB`)
 }

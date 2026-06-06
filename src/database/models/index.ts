@@ -12,6 +12,8 @@ import { setupAssociations } from './associations'
 import AgentModel from './agent.model'
 import llmModel from './llmModel.model'
 import { EpisodicMemoryModel } from './episodic-memory.model'
+import { AutomationJobModel } from './automation-job.model'
+import { UserProfileModel } from './user-profile.model'
 
 // Panggil sekali saja
 setupAssociations()
@@ -32,7 +34,9 @@ export {
   llmModel,
   KnowledgeSourceModel,
   KnowledgeChunkModel,
-  EpisodicMemoryModel
+  EpisodicMemoryModel,
+  AutomationJobModel,
+  UserProfileModel
 }
 
 export default {
@@ -48,5 +52,7 @@ export default {
   llmModel,
   KnowledgeSourceModel,
   KnowledgeChunkModel,
-  EpisodicMemoryModel
+  EpisodicMemoryModel,
+  AutomationJobModel,
+  UserProfileModel
 }

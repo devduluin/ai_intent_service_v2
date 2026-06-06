@@ -40,7 +40,8 @@ export class IntentMatchingStage {
     embedding: number[],
     intents: Intent[],
     agent: Agent,
-    options?: IntentMatchingOptions
+    options?: IntentMatchingOptions,
+    previousIntentSlug?: string | null
   ): Promise<IntentMatch[]> {
     // Use config topK with option override
     const topK = options?.topK ?? config.intent.topK; // Default: 3 from config
@@ -52,7 +53,8 @@ export class IntentMatchingStage {
         embedding,
         intents,
         agent,
-        topK
+        topK,
+        previousIntentSlug
       );
 
       // Apply signal boosts if provided

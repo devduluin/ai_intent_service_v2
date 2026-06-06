@@ -6,7 +6,7 @@ class ToolExecutorService {
   // ======================================================
   // EXECUTE TOOL
   // ======================================================
-  async execute(tool: Tool, params: Record<string, any> = {}) {
+  async execute(tool: Tool, params: Record<string, any> = {}, _data?: unknown) {
 
     // console.log(`Found tool for slug "${toolSlug}":`, tool);
     if (!tool) throw new Error(`Tool not found`);

@@ -38,6 +38,11 @@ class ToolRepository {
         isRequired: p.isRequired,
         description: p.description,
         defaultValue: p.defaultValue,
+        extractPrompt: p.extractPrompt,
+        label: p.label,
+        config: p.config,
+        order: p.order,
+        isHidden: p.isHidden,
       }))
     }
   }

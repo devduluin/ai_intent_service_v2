@@ -96,10 +96,10 @@ export class WorkingMemoryManager {
 
       const existing = await this.get(userId, appName);
       if (existing) {
-        appLogger.warn('[WorkingMemory] Memory already exists, updating instead', {
-          userId,
-          appName
-        });
+        // appLogger.warn('[WorkingMemory] Memory already exists, updating instead', {
+        //   userId,
+        //   appName
+        // });
         return await this.update(userId, appName, data, options);
       }
 
@@ -118,12 +118,12 @@ export class WorkingMemoryManager {
         ttl: options?.ttl || this.DEFAULT_TTL
       });
 
-      appLogger.info('[WorkingMemory] Created new memory', {
-        userId,
-        appName,
-        activeIntent: data.activeIntent,
-        activeWorkflow: data.activeWorkflow
-      });
+      // appLogger.info('[WorkingMemory] Created new memory', {
+      //   userId,
+      //   appName,
+      //   activeIntent: data.activeIntent,
+      //   activeWorkflow: data.activeWorkflow
+      // });
 
       return {
         success: true,
@@ -164,12 +164,12 @@ export class WorkingMemoryManager {
 
         await globalCache.set(cacheKey, memory, { skipRedis: false });
 
-        appLogger.debug('[WorkingMemory] Memory retrieved', {
-          userId,
-          appName,
-          activeIntent: memory.activeIntent,
-          accessCount: memory.metadata?.accessCount
-        });
+        // appLogger.debug('[WorkingMemory] Memory retrieved', {
+        //   userId,
+        //   appName,
+        //   activeIntent: memory.activeIntent,
+        //   accessCount: memory.metadata?.accessCount
+        // });
       } else {
         appLogger.debug('[WorkingMemory] Memory not found', {
           userId,
@@ -206,10 +206,10 @@ export class WorkingMemoryManager {
       const existing = await this.get(userId, appName);
 
       if (!existing) {
-        appLogger.warn('[WorkingMemory] Memory not found, creating new one', {
-          userId,
-          appName
-        });
+        // appLogger.warn('[WorkingMemory] Memory not found, creating new one', {
+        //   userId,
+        //   appName
+        // });
         return await this.create(userId, appName, data, options);
       }
 
@@ -237,13 +237,13 @@ export class WorkingMemoryManager {
         ttl: options?.ttl || this.DEFAULT_TTL
       });
 
-      appLogger.info('[WorkingMemory] Memory updated', {
-        userId,
-        appName,
-        updatedFields: Object.keys(data),
-        activeIntent: updatedData.activeIntent,
-        activeWorkflow: updatedData.activeWorkflow
-      });
+      // appLogger.info('[WorkingMemory] Memory updated', {
+      //   userId,
+      //   appName,
+      //   updatedFields: Object.keys(data),
+      //   activeIntent: updatedData.activeIntent,
+      //   activeWorkflow: updatedData.activeWorkflow
+      // });
 
       return {
         success: true,
@@ -276,10 +276,10 @@ export class WorkingMemoryManager {
 
       const existing = await this.get(userId, appName);
       if (!existing) {
-        appLogger.debug('[WorkingMemory] Memory not found, nothing to delete', {
-          userId,
-          appName
-        });
+        // appLogger.debug('[WorkingMemory] Memory not found, nothing to delete', {
+        //   userId,
+        //   appName
+        // });
         return {
           success: true,
           data: null
@@ -288,12 +288,12 @@ export class WorkingMemoryManager {
 
       await globalCache.del(cacheKey);
 
-      appLogger.info('[WorkingMemory] Memory deleted', {
-        userId,
-        appName,
-        activeIntent: existing.activeIntent,
-        activeWorkflow: existing.activeWorkflow
-      });
+      // appLogger.info('[WorkingMemory] Memory deleted', {
+      //   userId,
+      //   appName,
+      //   activeIntent: existing.activeIntent,
+      //   activeWorkflow: existing.activeWorkflow
+      // });
 
       return {
         success: true,
@@ -301,11 +301,11 @@ export class WorkingMemoryManager {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      appLogger.error('[WorkingMemory] Delete failed', {
-        userId,
-        appName,
-        error: errorMessage
-      });
+      // appLogger.error('[WorkingMemory] Delete failed', {
+      //   userId,
+      //   appName,
+      //   error: errorMessage
+      // });
 
       return {
         success: false,
@@ -329,9 +329,9 @@ export class WorkingMemoryManager {
 
       await globalCache.clear(cachePattern);
 
-      appLogger.info('[WorkingMemory] All memory cleared', {
-        pattern: pattern || 'all'
-      });
+      // appLogger.info('[WorkingMemory] All memory cleared', {
+      //   pattern: pattern || 'all'
+      // });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       appLogger.error('[WorkingMemory] Clear failed', {

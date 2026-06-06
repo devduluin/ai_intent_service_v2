@@ -7,7 +7,7 @@ module.exports = {
     // Ambil ID intent yg sudah di-seed
     const intents = await queryInterface.sequelize.query(
       `SELECT id, slug FROM intents
-       WHERE slug IN ('greeting','utilities','attendance', 'overtime', 'knowledge_workin','shift','leave', 'employee', 'payslip', 'claim', 'travel_request', 'xls_generator')`,
+       WHERE slug IN ('greeting','utilities','attendance', 'overtime', 'knowledge_workin','shift','leave', 'employee', 'payslip', 'claim', 'travel_request', 'xls_generator', 'data_analyzer', 'vehicles')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 
@@ -38,10 +38,8 @@ module.exports = {
       { intent:'greeting', text:'Siang', language:'id'},
       { intent:'greeting', text:'Sore', language:'id'},
       { intent:'greeting', text:'Malam', language:'id'},
-      { intent:'greeting', text:'Ada yang bisa dibantu?', language:'id'},
       { intent:'greeting', text:'Kamu siapa?', language:'id'},
-      { intent:'greeting', text:'Kamu bot apa manusia?', language:'id'},
-      { intent:'greeting', text:'Kamu bisa bantu apa?', language:'id'},
+      { intent:'greeting', text:'Anda bot apa manusia?', language:'id'},
       { intent:'greeting', text:'Saya butuh bantuan', language:'id'},
       { intent:'greeting', text:'Saya mau tanya sesuatu', language:'id'},
       { intent:'greeting', text:'Bisa bantu saya?', language:'id'},
@@ -507,11 +505,37 @@ module.exports = {
       { intent: 'xls_generator', text: 'Export to CSV', language: 'en' },
       { intent: 'xls_generator', text: 'Download CSV', language: 'en' },
       { intent: 'xls_generator', text: 'Create CSV report', language: 'en' },
-      { intent: 'xls_generator', text: 'Export employee data to Excel', language: 'en' },
-      { intent: 'xls_generator', text: 'Generate attendance report Excel', language: 'en' },
-      { intent: 'xls_generator', text: 'Export payroll to Excel', language: 'en' },
-      { intent: 'xls_generator', text: 'Create leave report CSV', language: 'en' },
-      { intent: 'xls_generator', text: 'Export claim data to CSV', language: 'en' },
+
+      { intent: 'data_analyzer', text: 'Coba analisa', language: 'id' },
+      { intent: 'data_analyzer', text: 'Analisis data', language: 'id' },
+      { intent: 'data_analyzer', text: 'Cari pola dalam data', language: 'id' },
+      { intent: 'data_analyzer', text: 'Jelaskan data', language: 'id' },
+      { intent: 'data_analyzer', text: 'Buat analisis data', language: 'id' },
+      { intent: 'data_analyzer', text: 'Lakukan analisa data', language: 'id' },
+
+      { intent: 'data_analyzer', text: 'Try data analysis', language: 'en' },
+
+
+      { intent: 'vehicles', text: 'Assignment kendaraan hari ini', language: 'id' },
+      { intent: 'vehicles', text: 'Assignment kendaraan exit kemarin', language: 'id' },
+      { intent: 'vehicles', text: 'kendaraan yang exit besok', language: 'id' },
+      { intent: 'vehicles', text: 'Daftar assignment kendaraan', language: 'id' },
+      { intent: 'vehicles', text: 'Kendaraan yang sudah diassign', language: 'id' },
+      { intent: 'vehicles', text: 'Vehicle assignment aktif', language: 'id' },
+      { intent: 'vehicles', text: 'Assignment kendaraan yang berjalan', language: 'id' },
+      { intent: 'vehicles', text: 'Kendaraan yang belum memiliki assignment', language: 'id' },
+      { intent: 'vehicles', text: 'Assignment kendaraan untuk driver', language: 'id' },
+      { intent: 'vehicles', text: 'Driver dan kendaraan yang diassign', language: 'id' },
+      { intent: 'vehicles', text: 'Kendaraan yang sedang digunakan', language: 'id' },
+      { intent: 'vehicles', text: 'Assignment kendaraan berdasarkan driver', language: 'id' },
+      { intent: 'vehicles', text: 'Data vehicle assignment aktif', language: 'id' },
+      { intent: 'vehicles', text: 'Assignment kendaraan yang selesai', language: 'id' },
+      { intent: 'vehicles', text: 'Riwayat assignment kendaraan', language: 'id' },
+      { intent: 'vehicles', text: 'Kendaraan yang dipakai hari ini', language: 'id' },
+      { intent: 'vehicles', text: 'Assignment mobil operasional', language: 'id' },
+      { intent: 'vehicles', text: 'Kendaraan yang sedang bertugas', language: 'id' },
+      { intent: 'vehicles', text: 'Vehicle assignment terbaru', language: 'id' },
+
     ]
 
     const rows = examples.map((e) => ({
@@ -528,7 +552,7 @@ module.exports = {
   async down(queryInterface) {
     const intents = await queryInterface.sequelize.query(
       `SELECT id FROM intents
-       WHERE slug IN ('greeting','utilities','attendance', 'overtime', 'knowledge_workin','shift','leave', 'claim', 'employee', 'payslip', 'travel_request', 'xls_generator')`,
+       WHERE slug IN ('greeting','utilities','attendance', 'overtime', 'knowledge_workin','shift','leave', 'claim', 'employee', 'payslip', 'travel_request', 'xls_generator', 'data_analyzer', 'vehicles')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 

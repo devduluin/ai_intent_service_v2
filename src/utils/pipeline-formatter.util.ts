@@ -1,5 +1,5 @@
 // utils/pipeline-formatter.util.ts
-import type { PipelineResult, PipelineError } from '../types';
+import type { PipelineResult, PipelineError, PipelineMetadata } from '../types';
 
 export class PipelineFormatter {
   /**
@@ -59,7 +59,7 @@ export class PipelineFormatter {
     };
   }
 
-  private static getMetadata(startTime: number) {
+  private static getMetadata(startTime: number): PipelineMetadata {
     return {
       totalTime: Date.now() - startTime
     };

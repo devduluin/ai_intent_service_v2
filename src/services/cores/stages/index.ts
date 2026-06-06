@@ -19,6 +19,10 @@ export { IntentMatchingStage, type IntentMatchingOptions } from './intent-matchi
 export { PlannerStage, type PlannerStageOptions } from './planner.stage';
 export { ExecutionStage, type ExecutionStageOptions, type ExecutionResult } from './execution.stage';
 export { NaturalizationStage, type NaturalizationStageOptions } from './naturalization.stage';
+export { ComparisonStage, type ComparisonStageResult, type StandaloneComparisonStageInput } from './comparison.stage';
+export { FallbackMatchesStage, type FallbackMatchesStageInput, type FallbackMatchesStageOptions } from './fallback-matches.stage';
 export { ContinuationStage, type ContinuationStageOptions, type ContinuationStageResult } from './continuation.stage';
 export { SlotFillingStage, type SlotFillingStageOptions, type SlotFillingStageResult } from './slot-filling.stage';
 export { ChatStage } from './chat.stage';
+export { PerceptionStage } from './perception.stage';
+export { SelfCorrectionStage } from './self-correction.stage';

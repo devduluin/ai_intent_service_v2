@@ -1,0 +1,38 @@
+{
+  "example": "Continuation - Refine Location Parameter",
+  "description": "User asks 'Kalau Bandung?' to change the location parameter while maintaining the same intent",
+  "request": {
+    "user_id": "user_1",
+    "app_name": "hris",
+    "text": "Kalau Bandung?",
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "Penjualan minggu ini di Surabaya"
+      },
+      {
+        "role": "assistant",
+        "content": "Total penjualan minggu ini di Surabaya adalah Rp 124 juta."
+      }
+    ]
+  },
+  "response": {
+    "success": true,
+    "response": "Total penjualan minggu ini di Bandung adalah Rp 98 juta.",
+    "intent": "sales_report",
+    "confidence": 0.91,
+    "metadata": {
+      "executionTime": 218,
+      "stage": "naturalization",
+      "source": "continuation",
+      "continuationType": "refine",
+      "inheritedContext": {
+        "timeframe": "minggu_ini"
+      },
+      "newParameters": {
+        "location": "Bandung"
+      },
+      "toolsUsed": ["sales_api"]
+    }
+  }
+}

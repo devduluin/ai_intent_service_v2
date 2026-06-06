@@ -1,0 +1,67 @@
+/* ============================================================ */
+/* RESPONSIVE BREAKPOINTS */
+/* ============================================================ */
+
+/* Mobile: 320px - 640px */
+@media (max-width: 640px) {
+  .message-bubble {
+    max-width: 85% !important;
+  }
+
+  .header-title {
+    font-size: 16px;
+  }
+
+  .header-subtitle {
+    display: none;
+  }
+
+  .message-input {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+
+  .btn-send {
+    min-width: 40px;
+    height: 40px;
+  }
+
+  .chat-footer {
+    padding: var(--spacing-sm);
+  }
+}
+
+/* Tablet: 641px - 1024px */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .message-bubble {
+    max-width: 65%;
+  }
+}
+
+/* Desktop: 1025px+ */
+@media (min-width: 1025px) {
+  .message-bubble {
+    max-width: 55%;
+  }
+
+  .chat-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    border-left: 1px solid var(--color-border);
+    border-right: 1px solid var(--color-border);
+  }
+}
+
+/* Landscape mobile */
+@media (max-height: 500px) {
+  .chat-header {
+    padding: var(--spacing-sm);
+  }
+
+  .header-title {
+    font-size: 16px;
+  }
+
+  .chat-main {
+    padding: var(--spacing-sm);
+  }
+}

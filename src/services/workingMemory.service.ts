@@ -1,73 +1,8 @@
 // services/workingMemory.service.ts
 import { globalCache } from '../utils/cache-helper.util';
 import { appLogger } from '../utils/logger.util';
-
-// ============================================================
-// TYPES & SCHEMA
-// ============================================================
-
-export interface WorkingMemoryData {
-  /**
-   * Intent yang sedang aktif (misal: 'leave', 'expense', 'meeting')
-   */
-  activeIntent?: string | null;
-
-  /**
-   * Workflow yang sedang dijalankan (misal: 'create_leave', 'approve_expense')
-   */
-  activeWorkflow?: string;
-
-  /**
-   * Tool yang sedang dieksekusi (misal: 'get_time', 'get_weather')
-   */
-  activeTool?: string;
-
-  /**
-   * Handler yang sedang dieksekusi (misal: 'xls_generator', 'pdf_generator')
-   * C-009 FIX: Separate field for handlers to distinguish from tools
-   */
-  activeHandler?: string;
-
-  /**
-   * Entitas yang sedang diproses (dinamis, tergantung workflow)
-   * Contoh: { leaveType: 'annual', duration: '3 days' }
-   */
-  activeEntities?: Record<string, unknown>;
-
-  /**
-   * Hint untuk continuation (apa yang bisa dilakukan selanjutnya)
-   */
-  continuationHints?: {
-    canExport?: boolean;
-    canSummarize?: boolean;
-    canModify?: boolean;
-    canCancel?: boolean;
-    [key: string]: boolean | undefined;
-  };
-
-  /**
-   * Metadata tambahan
-   */
-  metadata?: {
-    createdAt?: number;
-    updatedAt?: number;
-    lastAccessedAt?: number;
-    accessCount?: number;
-    [key: string]: unknown;
-  };
-}
-
-export interface WorkingMemoryOptions {
-  ttl?: number; // Time to live in milliseconds
-  userId?: string;
-  appName?: string;
-}
-
-export interface WorkingMemoryResult {
-  success: boolean;
-  data?: WorkingMemoryData | null;
-  error?: string;
-}
+import type {WorkingMemoryData, WorkingMemoryOptions, WorkingMemoryResult } from '../types/working-memory.type';
+import type { ActiveOffer, ActiveOfferStatus } from '../types/active-offer.types';
 
 // ============================================================
 // WORKING MEMORY SERVICE
@@ -104,10 +39,10 @@ class WorkingMemoryService {
       // Check if already exists
       const existing = await this.get(userId, appName);
       if (existing) {
-        appLogger.warn('[WorkingMemory] Memory already exists, updating instead', {
-          userId,
-          appName
-        });
+        // appLogger.warn('[WorkingMemory] Memory already exists, updating instead', {
+        //   userId,
+        //   appName
+        // });
         return await this.update(userId, appName, data, options);
       }
 
@@ -127,12 +62,12 @@ class WorkingMemoryService {
         ttl: options?.ttl || this.DEFAULT_TTL
       });
 
-      appLogger.info('[WorkingMemory] Created new memory', {
-        userId,
-        appName,
-        activeIntent: data.activeIntent,
-        activeWorkflow: data.activeWorkflow
-      });
+      // appLogger.info('[WorkingMemory] Created new memory', {
+      //   userId,
+      //   appName,
+      //   activeIntent: data.activeIntent,
+      //   activeWorkflow: data.activeWorkflow
+      // });
 
       return {
         success: true,
@@ -164,6 +99,13 @@ class WorkingMemoryService {
   ): Promise<WorkingMemoryData | null> {
     try {
       const cacheKey = this.getCacheKey(userId, appName);
+      
+      // appLogger.debug('[WorkingMemory] GET START', {
+      //   cacheKey,
+      //   userId,
+      //   appName
+      // });
+      
       const memory = await globalCache.get<WorkingMemoryData>(cacheKey);
 
       if (memory) {
@@ -176,18 +118,23 @@ class WorkingMemoryService {
 
         // Update di cache tanpa mengubah TTL
         await globalCache.set(cacheKey, memory, { skipRedis: false });
-
-        appLogger.debug('[WorkingMemory] Memory retrieved', {
-          userId,
-          appName,
-          activeIntent: memory.activeIntent,
-          accessCount: memory.metadata?.accessCount
-        });
+        
+        // appLogger.debug('[WorkingMemory] Memory retrieved', {
+        //   userId,
+        //   appName,
+        //   cacheKey,
+        //   activeIntent: memory.activeIntent,
+        //   activeTool: memory.activeTool,
+        //   accessCount: memory.metadata?.accessCount,
+        //   hasContinuationHints: !!memory.continuationHints,
+        //   lastToolSlug: memory.continuationHints?.lastToolSlug
+        // });
       } else {
-        appLogger.debug('[WorkingMemory] Memory not found', {
-          userId,
-          appName
-        });
+        // appLogger.debug('[WorkingMemory] Memory not found', {
+        //   userId,
+        //   appName,
+        //   cacheKey
+        // });
       }
 
       return memory;
@@ -220,21 +167,48 @@ class WorkingMemoryService {
       const cacheKey = this.getCacheKey(userId, appName);
       const now = Date.now();
 
+      // appLogger.debug('[WorkingMemory] UPDATE START', {
+      //   cacheKey,
+      //   userId,
+      //   appName,
+      //   dataKeys: Object.keys(data),
+      //   activeTool: data.activeTool,
+      //   activeIntent: data.activeIntent
+      // });
+
       // Get existing memory
       const existing = await this.get(userId, appName);
 
       if (!existing) {
-        appLogger.warn('[WorkingMemory] Memory not found, creating new one', {
-          userId,
-          appName
-        });
+        // appLogger.warn('[WorkingMemory] Memory not found, creating new one', {
+        //   userId,
+        //   appName,
+        //   cacheKey
+        // });
         return await this.create(userId, appName, data, options);
       }
 
+      // appLogger.debug('[WorkingMemory] Memory found, merging', {
+      //   existingActiveTool: existing.activeTool,
+      //   existingActiveIntent: existing.activeIntent
+      // });
+
       // Merge data (deep merge untuk activeEntities dan continuationHints)
+      // IMPORTANT: Don't overwrite activeTool if new data doesn't have it or has wrong value
       const updatedData: WorkingMemoryData = {
         ...existing,
-        ...data,
+        // Only override activeTool if new data has a valid tool slug (not intent slug)
+        ...(data.activeTool && !data.activeTool.includes('utilities') && !data.activeTool.includes('greeting') 
+          ? { activeTool: data.activeTool } 
+          : { activeTool: existing.activeTool }),
+        // Only override activeIntent if new data has it
+        ...(data.activeIntent ? { activeIntent: data.activeIntent } : {}),
+        ...(data.activeSkill ? { activeSkill: data.activeSkill } : {}),
+        ...(data.activePlan !== undefined ? { activePlan: data.activePlan } : {}),
+        ...(data.activeOffer !== undefined ? { activeOffer: data.activeOffer } : {}),
+        ...(data.offerHistory !== undefined ? { offerHistory: data.offerHistory } : {}),
+        // Only override activeWorkflow if new data has it
+        ...(data.activeWorkflow ? { activeWorkflow: data.activeWorkflow } : {}),
         activeEntities: {
           ...existing.activeEntities,
           ...data.activeEntities
@@ -252,17 +226,34 @@ class WorkingMemoryService {
         }
       };
 
+      // appLogger.debug('[WorkingMemory] SETTING TO CACHE', {
+      //   cacheKey,
+      //   ttl: options?.ttl || this.DEFAULT_TTL,
+      //   ttlMinutes: (options?.ttl || this.DEFAULT_TTL) / 1000 / 60,
+      //   hasActiveTool: !!updatedData.activeTool
+      // });
+
       await globalCache.set(cacheKey, updatedData, {
         ttl: options?.ttl || this.DEFAULT_TTL
       });
 
-      appLogger.info('[WorkingMemory] Memory updated', {
-        userId,
-        appName,
-        updatedFields: Object.keys(data),
-        activeIntent: updatedData.activeIntent,
-        activeWorkflow: updatedData.activeWorkflow
-      });
+      // Verify save
+      // const saved = await globalCache.get<WorkingMemoryData>(cacheKey);
+      // appLogger.debug('[WorkingMemory] CACHE SAVE VERIFIED', {
+      //   cacheKey,
+      //   saved: !!saved,
+      //   savedActiveTool: saved?.activeTool,
+      //   savedActiveIntent: saved?.activeIntent
+      // });
+
+      // appLogger.info('[WorkingMemory] Memory updated', {
+      //   userId,
+      //   appName,
+      //   updatedFields: Object.keys(data),
+      //   activeIntent: updatedData.activeIntent,
+      //   activeWorkflow: updatedData.activeWorkflow,
+      //   activeTool: updatedData.activeTool
+      // });
 
       return {
         success: true,
@@ -283,6 +274,55 @@ class WorkingMemoryService {
     }
   }
 
+  async setActiveOffer(
+    userId: string,
+    appName: string,
+    offer: ActiveOffer | null
+  ): Promise<WorkingMemoryResult> {
+    const existing = await this.get(userId, appName);
+    const history = [...(existing?.offerHistory || [])];
+
+    if (existing?.activeOffer?.status === 'active' && offer?.id !== existing.activeOffer.id) {
+      history.unshift({
+        id: existing.activeOffer.id,
+        type: existing.activeOffer.type,
+        status: 'cleared',
+        timestamp: Date.now()
+      });
+    }
+
+    return this.update(userId, appName, {
+      activeOffer: offer,
+      offerHistory: history.slice(0, 20)
+    });
+  }
+
+  async updateActiveOfferStatus(
+    userId: string,
+    appName: string,
+    status: Exclude<ActiveOfferStatus, 'active'>
+  ): Promise<WorkingMemoryResult> {
+    const existing = await this.get(userId, appName);
+    if (!existing?.activeOffer) {
+      return { success: true, data: existing };
+    }
+
+    const history = [
+      {
+        id: existing.activeOffer.id,
+        type: existing.activeOffer.type,
+        status,
+        timestamp: Date.now()
+      },
+      ...(existing.offerHistory || [])
+    ].slice(0, 20);
+
+    return this.update(userId, appName, {
+      activeOffer: null,
+      offerHistory: history
+    });
+  }
+
   /**
    * DELETE - Hapus working memory
    * @param userId - User identifier
@@ -298,10 +338,10 @@ class WorkingMemoryService {
       // Check if exists
       const existing = await this.get(userId, appName);
       if (!existing) {
-        appLogger.debug('[WorkingMemory] Memory not found, nothing to delete', {
-          userId,
-          appName
-        });
+        // appLogger.debug('[WorkingMemory] Memory not found, nothing to delete', {
+        //   userId,
+        //   appName
+        // });
         return {
           success: true,
           data: null
@@ -311,12 +351,12 @@ class WorkingMemoryService {
       // Delete from cache
       await globalCache.del(cacheKey);
 
-      appLogger.info('[WorkingMemory] Memory deleted', {
-        userId,
-        appName,
-        activeIntent: existing.activeIntent,
-        activeWorkflow: existing.activeWorkflow
-      });
+      // appLogger.info('[WorkingMemory] Memory deleted', {
+      //   userId,
+      //   appName,
+      //   activeIntent: existing.activeIntent,
+      //   activeWorkflow: existing.activeWorkflow
+      // });
 
       return {
         success: true,
@@ -349,9 +389,9 @@ class WorkingMemoryService {
 
       await globalCache.clear(cachePattern);
 
-      appLogger.info('[WorkingMemory] All memory cleared', {
-        pattern: pattern || 'all'
-      });
+      // appLogger.info('[WorkingMemory] All memory cleared', {
+      //   pattern: pattern || 'all'
+      // });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       appLogger.error('[WorkingMemory] Clear failed', {

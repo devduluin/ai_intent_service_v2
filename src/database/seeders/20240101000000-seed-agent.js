@@ -55,7 +55,7 @@ WAJIB DIIKUTI:
 
       {
         id: Sequelize.literal('gen_random_uuid()'),
-        modelId: llmMap['qwen3.5-flash'],
+        modelId: llmMap['qwen3.5-flash-2026-02-23'],
         name: 'Accounting System',
         slug: 'accounting',
         description: 'Agent untuk accounting system (financial reports, ledger, invoice)',

@@ -1,14 +1,32 @@
 import type { PendingIntentState } from '../types'
 import { executeWithLock } from '../utils/distributed-lock.util'
 import { appLogger } from '../utils/logger.util'
+import { config } from '../config'
 
 const TTL_MS = 1000 * 60 * 5 // 5 minutes
-const MAX_RETRY_DEFAULT = 2
-const STATE_VERSION = 2
+const MAX_RETRY_DEFAULT = config.slotFilling.maxRetry
+const STATE_VERSION = 3
 const LOCK_TTL_MS = 5000 // 5 seconds lock timeout
 
 class ConversationStateService {
   private store = new Map<string, PendingIntentState>()
+
+  constructor() {
+    // Periodic eviction of expired state entries
+    setInterval(() => {
+      const now = Date.now()
+      let expiredCount = 0
+      for (const [key, state] of this.store) {
+        if (now > state.expiresAt) {
+          this.store.delete(key)
+          expiredCount++
+        }
+      }
+      if (expiredCount > 0) {
+        appLogger.debug('[State] Periodic eviction completed', { expiredCount })
+      }
+    }, TTL_MS)
+  }
 
   private key(userId: string, app: string) {
     return `${app}:${userId}`
@@ -57,13 +75,15 @@ class ConversationStateService {
             intentSlugs: state.intentSlugs,
             collectedParams: state.collectedParams ?? {},
             missingToolsParams,
+            missingResourceParams: state.missingResourceParams,
             originalPlan: state.originalPlan,
-            retryCount: 0,
+            retryCount: state.retryCount ?? 0,
             maxRetry: state.maxRetry ?? MAX_RETRY_DEFAULT,
             createdAt: now,
             updatedAt: now,
             expiresAt: now + TTL_MS,
             lastUserMessage: state.lastUserMessage,
+            missingParams: state.missingParams || []  // ✅ Keep simple array for backward compat
           }
 
           this.store.set(this.key(userId, app), fullState)
@@ -72,7 +92,9 @@ class ConversationStateService {
             appName: app,
             intentSlugs: fullState.intentSlugs,
             missingToolsParams: fullState.missingToolsParams?.length,
-            hasOriginalPlan: !!fullState.originalPlan
+            missingResourceParams: fullState.missingResourceParams?.length,
+            hasOriginalPlan: !!fullState.originalPlan,
+            retryCount: fullState.retryCount
           })
         },
         {
@@ -139,152 +161,35 @@ class ConversationStateService {
   // =========================================================
   private migrateState(oldState: any): PendingIntentState | null {
     const now = Date.now()
-    
+
     let missingToolsParams = oldState.missingToolsParams
-    
+
     if (!missingToolsParams && oldState.missingParamsMap) {
       missingToolsParams = oldState.missingParamsMap.map((item: any) => ({
         toolSlug: item.intentSlug,
         toolName: item.toolName || item.intentSlug,
-        missing: Array.isArray(item.missing) ? item.missing : [item.missing]
+        missing: item.missing
       }))
     }
 
     return {
       userId: oldState.userId,
       appName: oldState.appName,
-      isMultiIntent: oldState.isMultiIntent ?? Boolean(oldState.intentSlugs?.length),
+      isMultiIntent: Boolean(oldState.intentSlugs?.length),
       version: STATE_VERSION,
       intentSlug: oldState.intentSlug,
       intentSlugs: oldState.intentSlugs,
       collectedParams: oldState.collectedParams ?? {},
       missingToolsParams,
+      missingResourceParams: oldState.missingResourceParams,
       originalPlan: oldState.originalPlan,
-      retryCount: oldState.retryCount ?? 0,
+      retryCount: oldState.retryCount ?? 0,  // ✅ Default to 0
       maxRetry: oldState.maxRetry ?? MAX_RETRY_DEFAULT,
       createdAt: oldState.createdAt ?? now,
       updatedAt: now,
       expiresAt: now + TTL_MS,
       lastUserMessage: oldState.lastUserMessage,
-    }
-  }
-
-  // =========================================================
-  // UPDATE PARTIAL STATE (WITH LOCK)
-  // =========================================================
-  async update(userId: string, app: string, patch: Partial<PendingIntentState>) {
-    try {
-      await executeWithLock(
-        this.lockKey(userId, app),
-        async () => {
-          const current = this.get(userId, app)
-          if (!current) {
-            appLogger.warn("[State] Cannot update non-existent state", {
-              userId,
-              appName: app
-            })
-            return
-          }
-
-          let mergedMissingToolsParams = current.missingToolsParams
-          if (patch.missingToolsParams) {
-            mergedMissingToolsParams = patch.missingToolsParams
-          }
-
-          const updated: PendingIntentState = {
-            ...current,
-            ...patch,
-            missingToolsParams: mergedMissingToolsParams,
-            originalPlan: patch.originalPlan ?? current.originalPlan,
-            updatedAt: Date.now(),
-            expiresAt: Date.now() + TTL_MS
-          }
-
-          this.store.set(this.key(userId, app), updated)
-          appLogger.debug("[State] Updated:", {
-            userId,
-            appName: app,
-            intentSlugs: updated.intentSlugs,
-            missingToolsParams: updated.missingToolsParams?.length,
-            hasOriginalPlan: !!updated.originalPlan
-          })
-        },
-        {
-          ttlMs: LOCK_TTL_MS,
-          retryDelayMs: 50,
-          maxRetries: 100
-        }
-      )
-    } catch (error) {
-      appLogger.error("[State] Failed to update state (lock acquisition failed)", {
-        userId,
-        appName: app,
-        error: error instanceof Error ? error.message : error
-      })
-      throw new Error(`Conversation state update lock failed for user ${userId}`)
-    }
-  }
-
-  // =========================================================
-  // RETRY HANDLING (WITH LOCK)
-  // =========================================================
-  async incrementRetry(userId: string, app: string): Promise<boolean> {
-    try {
-      let success = false;
-
-      await executeWithLock(
-        this.lockKey(userId, app),
-        async () => {
-          const state = this.get(userId, app)
-          if (!state) {
-            appLogger.warn("[State] Cannot increment retry for non-existent state", {
-              userId,
-              appName: app
-            })
-            return
-          }
-
-          const nextRetry = state.retryCount + 1
-
-          if (nextRetry >= state.maxRetry) {
-            appLogger.info("[State] Retry limit reached → clearing", {
-              userId,
-              appName: app,
-              retryCount: nextRetry,
-              maxRetry: state.maxRetry
-            })
-            this.clear(userId, app)
-            return
-          }
-
-          this.store.set(this.key(userId, app), {
-            ...state,
-            retryCount: nextRetry,
-            updatedAt: Date.now()
-          })
-
-          appLogger.debug(`[State] Retry increment → ${nextRetry}`, {
-            userId,
-            appName: app
-          })
-
-          success = true;
-        },
-        {
-          ttlMs: LOCK_TTL_MS,
-          retryDelayMs: 50,
-          maxRetries: 100
-        }
-      )
-
-      return success;
-    } catch (error) {
-      appLogger.error("[State] Failed to increment retry (lock acquisition failed)", {
-        userId,
-        appName: app,
-        error: error instanceof Error ? error.message : error
-      })
-      return false
+      missingParams: oldState.missingParams || []  // ✅ Keep simple array
     }
   }
 
@@ -297,26 +202,183 @@ class ConversationStateService {
         this.lockKey(userId, app),
         async () => {
           this.store.delete(this.key(userId, app))
-          appLogger.debug("[State] Cleared", {
-            userId,
-            appName: app
-          })
+          appLogger.debug('[State] Cleared', { userId, appName: app })
         },
         {
           ttlMs: LOCK_TTL_MS,
           retryDelayMs: 50,
-          maxRetries: 10
+          maxRetries: 100
         }
       )
     } catch (error) {
-      appLogger.error("[State] Failed to clear state (lock acquisition failed)", {
+      appLogger.error('[State] Failed to clear state (lock acquisition failed)', {
         userId,
         appName: app,
         error: error instanceof Error ? error.message : error
       })
-      // Still delete even if lock fails (best effort)
-      this.store.delete(this.key(userId, app))
+      throw new Error(`Conversation state lock failed for user ${userId}`)
     }
+  }
+
+  // =========================================================
+  // RETRY COUNT MANAGEMENT
+  // =========================================================
+  
+  /**
+   * Get current retry count
+   */
+  async getRetryCount(userId: string, appName: string): Promise<number> {
+    const state = this.get(userId, appName)
+    return state?.retryCount || 0
+  }
+
+  /**
+   * Increment retry count, return new count
+   */
+  async incrementRetry(userId: string, appName: string): Promise<number> {
+    const state = this.get(userId, appName)
+    if (!state) {
+      appLogger.warn('[State] Cannot increment retry - no state found', { userId, appName })
+      return 0
+    }
+    
+    const newRetryCount = (state.retryCount || 0) + 1
+    
+    await this.set(userId, appName, {
+      ...state,
+      retryCount: newRetryCount,
+      updatedAt: Date.now()
+    })
+    
+    appLogger.info('[State] Retry count incremented', {
+      userId,
+      appName,
+      newRetryCount,
+      maxRetry: state.maxRetry
+    })
+    
+    return newRetryCount
+  }
+
+  /**
+   * Reset retry count (on successful param collection)
+   */
+  async resetRetry(userId: string, appName: string): Promise<void> {
+    const state = this.get(userId, appName)
+    if (!state) return
+    
+    await this.set(userId, appName, {
+      ...state,
+      retryCount: 0,
+      updatedAt: Date.now()
+    })
+    
+    appLogger.debug('[State] Retry count reset', { userId, appName })
+  }
+
+  /**
+   * Update missing params in state
+   */
+  async updateMissingParams(
+    userId: string,
+    appName: string,
+    missingParams: string[]
+  ): Promise<void> {
+    const state = this.get(userId, appName)
+    if (!state) return
+    
+    await this.set(userId, appName, {
+      ...state,
+      missingToolsParams: state.missingToolsParams?.map(m => ({
+        ...m,
+        missing: missingParams
+      })) || [],
+      missingResourceParams: state.missingResourceParams
+        ?.map(m => ({
+          ...m,
+          missing: m.missing.filter(paramName => missingParams.includes(paramName))
+        }))
+        .filter(m => m.missing.length > 0),
+      missingParams,  // Keep simple missingParams array for backward compat
+      updatedAt: Date.now()
+    })
+    
+    appLogger.debug('[State] Missing params updated', {
+      userId,
+      appName,
+      missingParamsCount: missingParams.length
+    })
+  }
+
+  /**
+   * Update collected params in state
+   */
+  async updateCollectedParams(
+    userId: string,
+    appName: string,
+    collectedParams: Record<string, unknown>
+  ): Promise<void> {
+    const state = this.get(userId, appName)
+    if (!state) return
+    
+    await this.set(userId, appName, {
+      ...state,
+      collectedParams: {
+        ...state.collectedParams,
+        ...collectedParams
+      },
+      updatedAt: Date.now()
+    })
+    
+    appLogger.debug('[State] Collected params updated', {
+      userId,
+      appName,
+      collectedParamsCount: Object.keys(collectedParams).length
+    })
+  }
+
+  /**
+   * Batch update: missing params + collected params in one lock
+   */
+  async updateSlotState(
+    userId: string,
+    appName: string,
+    opts: {
+      missingParams?: string[]
+      collectedParams?: Record<string, unknown>
+    }
+  ): Promise<void> {
+    const state = this.get(userId, appName)
+    if (!state) return
+
+    const updates: Partial<PendingIntentState> = { updatedAt: Date.now() }
+
+    if (opts.missingParams) {
+      updates.missingToolsParams = state.missingToolsParams?.map(m => ({
+        ...m,
+        missing: opts.missingParams!
+      })) || []
+      updates.missingResourceParams = state.missingResourceParams
+        ?.map(m => ({
+          ...m,
+          missing: m.missing.filter(paramName => opts.missingParams!.includes(paramName))
+        }))
+        .filter(m => m.missing.length > 0)
+      updates.missingParams = opts.missingParams
+    }
+
+    if (opts.collectedParams) {
+      updates.collectedParams = { ...state.collectedParams, ...opts.collectedParams }
+    }
+
+    await this.set(userId, appName, { ...state, ...updates })
+
+    appLogger.debug('[State] Slot state batch updated', {
+      userId,
+      appName,
+      missingParams: opts.missingParams?.length,
+      collectedParams: opts.collectedParams ? Object.keys(opts.collectedParams).length : 0
+    })
   }
 }
 

@@ -18,6 +18,13 @@ export class EpisodicMemoryModel extends Model<
   declare intent: string;
   declare summary: string;
   declare toolsUsed: CreationOptional<Record<string, any> | null>;
+  declare topicKey: CreationOptional<string | null>;
+  declare topicLabel: CreationOptional<string | null>;
+  declare flowStage: CreationOptional<string | null>;
+  declare taskPlan: CreationOptional<Record<string, any> | null>;
+  declare flowTrace: CreationOptional<Record<string, any>[] | null>;
+  declare rerunnable: CreationOptional<boolean>;
+  declare memoryMeta: CreationOptional<Record<string, any> | null>;
   declare created_at: CreationOptional<Date>;
   declare updated_at: CreationOptional<Date>;
 }
@@ -62,6 +69,49 @@ EpisodicMemoryModel.init(
       type: DataTypes.JSONB,
       allowNull: true,
       comment: 'PlannerOutput snapshot for tool usage hints',
+    },
+
+    topicKey: {
+      type: DataTypes.STRING(200),
+      allowNull: true,
+      comment: 'Normalized user-facing topic key',
+    },
+
+    topicLabel: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Human-friendly topic label',
+    },
+
+    flowStage: {
+      type: DataTypes.STRING(80),
+      allowNull: true,
+      comment: 'Pipeline flow stage that produced this memory',
+    },
+
+    taskPlan: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'PlannerOutput snapshot for executed task graph',
+    },
+
+    flowTrace: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'Compact pipeline flow trace',
+    },
+
+    rerunnable: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Whether this memory entry has a rerunnable taskPlan',
+    },
+
+    memoryMeta: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'Additional memory metadata',
     },
 
     created_at: {

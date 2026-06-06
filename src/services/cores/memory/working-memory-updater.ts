@@ -1,6 +1,7 @@
-import { workingMemoryService, type WorkingMemoryData } from '../../workingMemory.service';
+import { workingMemoryService } from '../../workingMemory.service';
 import type { PlannerOutput } from '../../../types/planner.types';
-import type { ContinuationIntent } from '../../continuationResolver.service';
+import type { WorkingMemoryData } from '../../../types/working-memory.type';
+import type { ContinuationIntent } from '../resolvers/continuation.resolver';
 import { appLogger } from '../../../utils/logger.util';
 
 // ============================================================
@@ -13,6 +14,9 @@ export interface WorkingMemoryPlanContext {
   params?: Record<string, unknown>;
   plan?: PlannerOutput;
   activeIntent?: string | null;
+  activeTool?: string | null;  // NEW: Track active tool for continuation
+  activeSkill?: string | null;
+  sourceText?: string;
 }
 
 export interface WorkingMemoryContinuationContext {
@@ -110,34 +114,56 @@ export class WorkingMemoryUpdater {
     const toolSlugs = context.plan?.tasks
       ? context.plan.tasks.filter(t => t.resource === 'tool').map(t => t.key)
       : Object.keys(context.apiResults);
+    const skillSlugs = context.plan?.tasks
+      ? context.plan.tasks.filter(t => t.resource === 'skill').map(t => t.key)
+      : [];
 
     const activeWorkflow = this.inferWorkflowFromTools(toolSlugs);
-    const activeTool = toolSlugs[0];
+    // Use explicit activeTool from context if provided, otherwise infer from plan
+    const activeTool = context.activeTool || toolSlugs[0];
+    const activeSkill = context.activeSkill || skillSlugs[0];
     const activeEntities = this.extractEntitiesFromParams(context.params || {});
+    const existingEntities = { ...(existing?.activeEntities || {}) };
+    const shouldClearTemporalEntities = context.params?.__dateBlind === true;
+
+    if (shouldClearTemporalEntities) {
+      for (const key of this.getTemporalFilterKeys()) {
+        delete existingEntities[key];
+      }
+    }
+
     const continuationHints = this.inferContinuationHints(context.apiResults);
 
-    appLogger.info('[WorkingMemoryUpdater] Updated from plan execution', {
-      activeWorkflow,
-      activeTool,
-      entitiesCount: Object.keys(activeEntities).length
-    });
+    // appLogger.info('[WorkingMemoryUpdater] Updated from plan execution', {
+    //   activeWorkflow,
+    //   activeTool,
+    //   entitiesCount: Object.keys(activeEntities).length
+    // });
 
     return {
       ...(context.activeIntent ? { activeIntent: context.activeIntent } : {}),
-      ...(activeWorkflow ? { activeWorkflow } : {}),
       ...(activeTool ? { activeTool } : {}),
+      ...(activeSkill ? { activeSkill } : {}),
+      ...(activeWorkflow ? { activeWorkflow } : {}),
+      ...(context.plan ? { activePlan: context.plan } : {}),  // ✅ NEW: Store planner tasks
       activeEntities: {
-        ...existing?.activeEntities,
+        ...existingEntities,
         ...activeEntities
       },
-      continuationHints,
+      continuationHints: {
+        ...continuationHints,
+        lastToolSlug: activeTool,  // Store last tool slug for fallback
+        lastSkillSlug: activeSkill
+      },
       metadata: {
         ...existing?.metadata,
         lastAccessedAt: Date.now(),
         accessCount: (existing?.metadata?.accessCount || 0) + 1,
         lastExecution: {
           timestamp: Date.now(),
+          sourceText: context.sourceText,
           results: context.apiResults,
+          params: context.params || {},
           type: 'full_pipeline',
           planMode: context.plan?.mode || 'single_step'
         }
@@ -158,35 +184,22 @@ export class WorkingMemoryUpdater {
       Object.assign(mergedEntities, context.intent.extractedParams);
     }
 
-    // C-009 FIX: Determine if targetHandler is actually a handler or tool
-    // Handlers: xls_generator, pdf_generator, data_analyzer (executionType: 'handler')
-    // Tools: get_time, get_weather (executionType: 'tool')
-    const targetHandler = context.intent.targetHandler;
-    const isHandler = targetHandler && (
-      targetHandler.includes('_generator') || 
-      targetHandler.includes('_analyzer') ||
-      targetHandler === 'xls_generator' ||
-      targetHandler === 'pdf_generator' ||
-      targetHandler === 'data_analyzer'
-    );
-
-    // Set activeTool only for actual tools, not handlers
-    const activeTool = isHandler ? undefined : (targetHandler || existing?.activeTool);
-    const activeHandler = isHandler ? targetHandler : undefined;
+    const targetSkill = context.intent.targetSkill;
+    const activeTool = existing?.activeTool || null;
+    const activeSkill = targetSkill || existing?.activeSkill;
     const finalActiveIntent = context.activeIntent || existing?.activeIntent || `continuation:${context.intent.type}`;
 
-    appLogger.info('[WorkingMemoryUpdater] Updated from continuation', {
-      continuationType: context.intent.type,
-      targetHandler,
-      isHandler,
-      activeTool: activeTool || 'none',
-      activeHandler: activeHandler || 'none'
-    });
+    // appLogger.info('[WorkingMemoryUpdater] Updated from continuation', {
+    //   continuationType: context.intent.type,
+    //   targetSkill,
+    //   activeTool: activeTool || 'none',
+    //   activeSkill: activeSkill || 'none'
+    // });
 
     return {
       activeEntities: mergedEntities,
       ...(activeTool ? { activeTool } : {}),
-      ...(activeHandler ? { activeHandler } : {}),
+      ...(activeSkill ? { activeSkill } : {}),
       ...(finalActiveIntent ? { activeIntent: finalActiveIntent } : {}),
       continuationHints: context.intent.type === 'export'
         ? { ...existing?.continuationHints, canExport: false, canSummarize: true }
@@ -200,7 +213,7 @@ export class WorkingMemoryUpdater {
           results: context.apiResults || {},
           type: 'continuation',
           continuationType: context.intent.type,
-          targetHandler
+          targetSkill
         }
       }
     };
@@ -280,13 +293,39 @@ export class WorkingMemoryUpdater {
    */
   private extractEntitiesFromParams(params: Record<string, unknown>): Record<string, unknown> {
     const entities: Record<string, unknown> = {};
-    
-    if (params.date) entities.date = params.date;
-    if (params.dateStart) entities.dateStart = params.dateStart;
-    if (params.dateEnd) entities.dateEnd = params.dateEnd;
-    if (params.location) entities.location = params.location;
+
+    for (const [key, value] of Object.entries(params)) {
+      if (this.isMeaningfulParamValue(value)) {
+        entities[key] = value;
+      }
+    }
 
     return entities;
+  }
+
+  private isMeaningfulParamValue(value: unknown): boolean {
+    if (value === undefined || value === null) return false;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed !== '' && trimmed.toLowerCase() !== 'null' && trimmed.toLowerCase() !== 'undefined';
+    }
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+  }
+
+  private getTemporalFilterKeys(): string[] {
+    return [
+      'date',
+      'month',
+      'year',
+      'start_date',
+      'end_date',
+      'from_date',
+      'to_date',
+      'tanggal',
+      'bulan',
+      'tahun'
+    ];
   }
 
   /**

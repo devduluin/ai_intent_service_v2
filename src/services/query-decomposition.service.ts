@@ -1,5 +1,6 @@
 import { appLogger } from '../utils/logger.util'
 import { resolveTemporalExpression } from '../utils/dateHumanID'
+import { parseTemporalExpressions, formatDateToISO as formatTemporalDateToISO } from '../utils/temporal/temporal-expression-parser.util'
 
 // ============================================================
 // Types
@@ -22,6 +23,32 @@ export interface UserMessageSignals {
     normalizedValue?: string
     direction?: 'current' | 'past' | 'future'
   }[]
+  comparison?: {
+    isComparison: boolean
+    operator: 'compare' | 'versus' | 'difference' | 'trend'
+    baseline?: {
+      source: 'current_query' | 'working_memory' | 'explicit'
+      temporalDetails?: NonNullable<UserMessageSignals['temporalDetails']>
+      params?: Record<string, unknown>
+    }
+    target?: {
+      temporalDetails?: NonNullable<UserMessageSignals['temporalDetails']>
+      params?: Record<string, unknown>
+    }
+    textSpan?: string
+  }
+  skill?: {
+    hasStrongSignal: boolean
+    recommendedSkill?: string
+    candidates: Array<{
+      slug: string
+      name: string
+      confidence: number
+      matchedBy: string[]
+      matchedText: string[]
+      category?: string
+    }>
+  }
   entityHints: string[]
   asksForFile: boolean
   asksForRealtimeData: boolean
@@ -357,12 +384,14 @@ class QueryDecompositionService {
       .map(pattern => this.patternLabel(pattern))
 
     const temporalDetails = this.extractTemporalDetails(query)
+    const comparison = this.extractComparisonSignal(query, temporalDetails)
 
     return {
       actionHints: [...new Set(actionHints)],
       formatHints: [...new Set(formatHints)],
       temporalHints: [...new Set(temporalHints)],
       temporalDetails,
+      comparison,
       entityHints: this.extractEntityHints(query),
       asksForFile: /\b(file|berkas|dokumen|excel|xlsx|csv|pdf|export|download)\b/i.test(query),
       asksForRealtimeData: REALTIME_PATTERNS.some(pattern => pattern.test(query)),
@@ -617,6 +646,24 @@ class QueryDecompositionService {
     const details: NonNullable<UserMessageSignals['temporalDetails']> = []
     const normalizedQuery = this.normalizeQuery(query)
 
+    for (const expression of parseTemporalExpressions(query, { locale: 'auto', timezone: 'Asia/Jakarta' })) {
+      if (expression.kind === 'date' || expression.kind === 'datetime') {
+        details.push({
+          type: 'date',
+          value: expression.raw,
+          normalizedValue: expression.date,
+          direction: expression.direction
+        })
+      } else if (expression.kind === 'recurrence') {
+        details.push({
+          type: 'period',
+          value: expression.raw,
+          normalizedValue: expression.frequency,
+          direction: 'future'
+        })
+      }
+    }
+
     // Use the utility function to resolve temporal expressions
     for (const expr of TEMPORAL_EXPRESSIONS) {
       if (normalizedQuery.includes(expr)) {
@@ -658,6 +705,20 @@ class QueryDecompositionService {
     if (slashDateMatch) {
       const isoDate = this.parseSlashDate(slashDateMatch[1]);
       details.push({ type: 'date', value: slashDateMatch[1], normalizedValue: isoDate, direction: 'past' })
+    }
+
+    const dayOfMonthMatch = query.match(/\b(?:tanggal|tgl)\s+(\d{1,2})\b/i)
+    if (dayOfMonthMatch) {
+      const day = Number(dayOfMonthMatch[1])
+      const isoDate = this.resolveDayOfMonth(day)
+      if (isoDate) {
+        details.push({
+          type: 'date',
+          value: dayOfMonthMatch[0],
+          normalizedValue: isoDate,
+          direction: isoDate > this.formatDateToISO(new Date()) ? 'future' : 'past'
+        })
+      }
     }
 
     // Month names (Indonesian)
@@ -712,17 +773,51 @@ class QueryDecompositionService {
       }
     }
 
-    return details.length > 0 ? details : []
+    return this.dedupeTemporalDetails(details)
+  }
+
+  private extractComparisonSignal(
+    query: string,
+    temporalDetails: UserMessageSignals['temporalDetails']
+  ): UserMessageSignals['comparison'] {
+    const normalized = this.normalizeQuery(query)
+    const patterns: Array<{ operator: 'compare' | 'versus' | 'difference' | 'trend'; pattern: RegExp }> = [
+      { operator: 'compare', pattern: /\b(bandingkan|dibandingkan|compare)\b/i },
+      { operator: 'versus', pattern: /\b(vs|versus)\b/i },
+      { operator: 'difference', pattern: /\b(selisih|beda|perbedaan|difference)\b/i },
+      { operator: 'trend', pattern: /\b(trend|tren)\b/i }
+    ]
+
+    const matched = patterns.find(item => item.pattern.test(query))
+    if (!matched) {
+      return undefined
+    }
+
+    const hasStandaloneTemporalPair = (temporalDetails?.length || 0) >= 2
+    const baselineSource: 'current_query' | 'working_memory' =
+      hasStandaloneTemporalPair || !/^(bandingkan|compare|dibandingkan|selisih|beda|perbedaan|trend|tren)\b/i.test(normalized)
+        ? 'current_query'
+        : 'working_memory'
+
+    return {
+      isComparison: true,
+      operator: matched.operator,
+      baseline: {
+        source: baselineSource,
+        temporalDetails: baselineSource === 'current_query' ? temporalDetails : undefined
+      },
+      target: {
+        temporalDetails
+      },
+      textSpan: query
+    }
   }
 
   /**
    * Format date as YYYY-mm-dd
    */
   private formatDateToISO(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return formatTemporalDateToISO(date);
   }
 
   /**
@@ -742,6 +837,51 @@ class QueryDecompositionService {
       return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
     }
     return slashDate;
+  }
+
+  private resolveDayOfMonth(day: number): string | null {
+    if (!Number.isInteger(day) || day < 1 || day > 31) {
+      return null
+    }
+
+    const now = new Date()
+    let year = now.getFullYear()
+    let monthIndex = now.getMonth()
+
+    if (day > now.getDate()) {
+      monthIndex -= 1
+      if (monthIndex < 0) {
+        monthIndex = 11
+        year -= 1
+      }
+    }
+
+    const candidate = new Date(year, monthIndex, day)
+    if (
+      candidate.getFullYear() !== year ||
+      candidate.getMonth() !== monthIndex ||
+      candidate.getDate() !== day
+    ) {
+      return null
+    }
+
+    return this.formatDateToISO(candidate)
+  }
+
+  private dedupeTemporalDetails(
+    details: NonNullable<UserMessageSignals['temporalDetails']>
+  ): UserMessageSignals['temporalDetails'] {
+    const seen = new Set<string>()
+    const result: NonNullable<UserMessageSignals['temporalDetails']> = []
+
+    for (const detail of details) {
+      const key = `${detail.type}|${detail.value}|${detail.normalizedValue || ''}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      result.push(detail)
+    }
+
+    return result
   }
 
   private detectLanguage(normalizedQuery: string): 'id' | 'en' | 'unknown' {
@@ -782,6 +922,69 @@ class QueryDecompositionService {
     const segments = this.segmentQuery(query);
     return segments.map(s => s.text);
   }
+}
+
+// ============================================================
+// EXPORTED HELPER FUNCTIONS FOR ENTITY DETECTION
+// ============================================================
+
+/**
+ * Extract temporal details from query (exported for entity detection)
+ */
+export function extractTemporalDetails(query: string): Array<{
+  type: 'day' | 'week' | 'month' | 'year' | 'quarter' | 'period' | 'date' | 'relative';
+  value: string;
+  normalizedValue?: string;
+  direction?: 'current' | 'past' | 'future';
+}> {
+  const normalizedQuery = query.toLowerCase();
+  const details: Array<{
+    type: 'day' | 'week' | 'month' | 'year' | 'quarter' | 'period' | 'date' | 'relative';
+    value: string;
+    normalizedValue?: string;
+    direction?: 'current' | 'past' | 'future';
+  }> = [];
+
+  for (const expression of parseTemporalExpressions(query, { locale: 'auto', timezone: 'Asia/Jakarta' })) {
+    if (expression.kind === 'date' || expression.kind === 'datetime') {
+      details.push({
+        type: 'date',
+        value: expression.raw,
+        normalizedValue: expression.date,
+        direction: expression.direction
+      });
+    } else if (expression.kind === 'recurrence') {
+      details.push({
+        type: 'period',
+        value: expression.raw,
+        normalizedValue: expression.frequency,
+        direction: 'future'
+      });
+    }
+  }
+
+  for (const expr of TEMPORAL_EXPRESSIONS) {
+    if (normalizedQuery.includes(expr.toLowerCase())) {
+      const resolved = resolveTemporalExpression(expr);
+      
+      if (resolved) {
+        details.push({
+          type: resolved.type,
+          value: expr,
+          normalizedValue: resolved.value,  // Use 'value' not 'normalized'
+          direction: resolved.direction
+        });
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  return details.filter(detail => {
+    const key = `${detail.type}|${detail.value}|${detail.normalizedValue || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export const queryDecompositionService = new QueryDecompositionService()

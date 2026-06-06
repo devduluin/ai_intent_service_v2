@@ -1,5 +1,5 @@
 import { openAiService } from '../openAi.service';
-import { episodicMemoryRepository } from '../../repositories/episodic-memory.repository';
+import { episodicMemoryRepository, MAX_SLOTS_PER_USER } from '../../repositories/episodic-memory.repository';
 import { globalCache } from '../../utils/cache-helper.util';
 import type { ChatMessage } from '../../types';
 import type { PlannerOutput } from '../../types/planner.types';
@@ -13,7 +13,6 @@ import { appLogger } from '../../utils/logger.util';
 // Constants
 // ============================================================
 
-const MAX_SLOTS_PER_USER = 6;
 const CACHE_PREFIX = 'episodic_memory:';
 const CONTEXT_CACHE_TTL = 300;
 const LAST_CONTEXT_CACHE_TTL = 600;
@@ -34,7 +33,6 @@ export class EpisodicMemoryManager {
 
   constructor() {
     appLogger.info('EpisodicMemoryManager initialized', {
-      maxSlotsPerUser: MAX_SLOTS_PER_USER,
       redisAvailable: globalCache.isRedisAvailable()
     });
   }
@@ -136,7 +134,6 @@ export class EpisodicMemoryManager {
         toolsUsed: toolsUsed || null,
       });
 
-      await this.enforceSlotLimit(userId, app);
       await this.invalidateContextCache(userId, app);
 
       appLogger.info('Episodic memory upserted', {
@@ -155,38 +152,6 @@ export class EpisodicMemoryManager {
         intent: intentKey
       });
       throw error;
-    }
-  }
-
-  /**
-   * Enforce slot limit per user+app
-   */
-  private async enforceSlotLimit(userId: string, app: string): Promise<void> {
-    try {
-      const count = await episodicMemoryRepository.countByUserAndApp(userId, app);
-
-      if (count > MAX_SLOTS_PER_USER) {
-        const deletedCount = await episodicMemoryRepository.deleteOldestToMaintainLimit(
-          userId,
-          app,
-          MAX_SLOTS_PER_USER
-        );
-
-        appLogger.info('Slot limit enforced', {
-          userId,
-          appName: app,
-          deletedCount,
-          remainingSlots: count - deletedCount
-        });
-
-        await this.invalidateContextCache(userId, app);
-      }
-    } catch (error) {
-      appLogger.error('Failed to enforce slot limit', {
-        error: error instanceof Error ? error.message : error,
-        userId,
-        appName: app
-      });
     }
   }
 
@@ -251,12 +216,7 @@ Ringkasan:`.trim();
       const summary = (
         await openAiService.chat(provider, llmModel, prompt)
       ).trim();
-
-      appLogger.debug('Summary generated', {
-        summaryLength: summary.length,
-        summary: summary.substring(0, 100)
-      });
-
+      
       await this.upsertMemory(intent, provider, llmModel, userId, app, summary, planSeen);
 
       return summary;

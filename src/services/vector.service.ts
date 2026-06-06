@@ -17,6 +17,9 @@ const INDEXING_TIMEOUT = 30000; // 30 seconds for indexing operations
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY = 1000; // 1 second
 const MAX_CONCURRENT_INDEXING = 5; // Limit concurrent indexing operations
+const MIN_CAPABILITY_EXAMPLE_SCORE = 0.25;
+const MIN_CAPABILITY_DOMAIN_SCORE = 0.40;
+const MIN_CAPABILITY_QUERY_RESULTS = 40;
 const CACHE_TTL_EMBEDDING = config.cache?.embeddingTTL 
   ? config.cache.embeddingTTL * 1000 
   : 3600 * 1000; // Default 1 hour in ms
@@ -630,7 +633,7 @@ class VectorService {
       vectorLogger.debug('Intent found by slug', {
         slug,
         intentId: metadata.intentId,
-        intentName: metadata.intentName,
+        intentSlug: metadata.intentSlug,
       });
 
       // Find full intent data from provided intents array
@@ -682,7 +685,8 @@ class VectorService {
     queryEmbedding: number[],
     intents: Intent[],
     agent: Agent,
-    topK = config.intent.topK
+    topK = config.intent.topK,
+    previousIntentSlug?: string | null
   ): Promise<IntentMatch[]> {
     const startTime = Date.now();
     this.metrics.totalQueries++;
@@ -698,13 +702,15 @@ class VectorService {
         return [];
       }
 
+      const requestedResults = Math.max(topK * 8, MIN_CAPABILITY_QUERY_RESULTS);
+
       // Query with retry and timeout
       const results = await withTimeout(
         withRetry(
           () =>
             col.query({
               queryEmbeddings: [queryEmbedding],
-              nResults: topK * 2, // Get more results to filter by threshold
+              nResults: requestedResults,
               include: [IncludeEnum.Metadatas, IncludeEnum.Distances],
               where: {
                 agentId: agentId,
@@ -732,7 +738,6 @@ class VectorService {
         matchCount: number;
         examples: string[];
       }>();
-      const similarityThreshold = config.intent.similarityThreshold * 0.85; // Lower threshold for capability detection
 
       for (let i = 0; i < results.metadatas[0].length; i++) {
         const meta = results.metadatas[0][i] as {
@@ -745,13 +750,12 @@ class VectorService {
         const distance = results.distances?.[0]?.[i] ?? 1;
         const score = 1 - distance;
 
-        // Lower threshold - we want to detect capability, not exact intent
-        if (score < similarityThreshold) {
+        if (score < MIN_CAPABILITY_EXAMPLE_SCORE) {
           vectorLogger.debug('Capability match below threshold', {
             intentId: meta.intentId,
             intentSlug: meta.intentSlug,
             score,
-            threshold: similarityThreshold,
+            threshold: MIN_CAPABILITY_EXAMPLE_SCORE,
           });
           continue;
         }
@@ -792,28 +796,54 @@ class VectorService {
       const matches: IntentMatch[] = [];
       
       for (const [slug, data] of domainMatches.entries()) {
-        // Calculate aggregate score
-        const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+        let continuityBoost = 0;
+
+        if (
+          previousIntentSlug &&
+          previousIntentSlug === slug
+        ) {
+          continuityBoost = 0.12;
+        }
+
+        const avgScore =
+          data.scores.reduce((a, b) => a + b, 0) /
+          data.scores.length;
+
         const maxScore = Math.max(...data.scores);
-        
-        // Capability boost: more examples = higher confidence
-        // 1 match: 1.0x, 2 matches: 1.1x, 3 matches: 1.2x, 4+ matches: 1.3x
-        const capabilityMultiplier = Math.min(1.0 + (data.matchCount - 1) * 0.1, 1.3);
-        const boostedScore = Math.min(avgScore * capabilityMultiplier, 1.0);
+
+        const densityBonus = Math.log1p(data.matchCount) * 0.04;
+
+        // Hybrid scoring
+        const finalScore =
+          (maxScore * 0.7) +
+          (avgScore * 0.3) +
+          densityBonus+
+          continuityBoost;
+
+        if (finalScore < MIN_CAPABILITY_DOMAIN_SCORE) {
+          continue;
+        }
         
         vectorLogger.debug('Domain capability detected', {
           slug,
           matchCount: data.matchCount,
           avgScore,
           maxScore,
-          boostedScore,
-          capabilityMultiplier,
+          finalScore,
           examples: data.examples.slice(0, 3)
         });
 
         matches.push({
           intent: data.intent,
-          score: boostedScore,
+          score: finalScore,
+          metadata: {
+            matchingMode: 'capability_filter',
+            maxExampleScore: maxScore,
+            avgExampleScore: avgScore,
+            exampleMatchCount: data.matchCount,
+            continuityBoost,
+            requestedResults
+          }
         });
       }
 

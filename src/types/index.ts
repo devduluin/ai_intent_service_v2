@@ -1,10 +1,16 @@
 import type { Agent } from './agent.types'
-import type { PlannerOutput } from './planner.types'
+import type { PlannerOutput, RecentUsageHints } from './planner.types'  // ✅ ADDED RecentUsageHints
+import type { EpisodicMemory } from './episodic-memory.types';
+import type { SkillSignal } from '../services/skill-signal.service';
+export * from './automation.types';
+export * from './confirmation.types';
+export * from './perception.types';
+export * from './user-profile.types';
+export * from './self-correction.types';
 // ============================================================
 // Core Types
 // ============================================================
 export type ExecutionType =
-  | 'handler'
   | 'llm'
 
 export interface Tool {
@@ -79,7 +85,7 @@ export interface Intent {
   // FROM MAPPING TABLE (NOT DIRECT RELATION)
   tools?: IntentToolMapping[]
   knowledge?: IntentKnowledgeMapping[]
-  
+
   agent?: Agent | null
 }
 
@@ -97,13 +103,34 @@ export interface IntentKnowledgeMapping {
   priority: number
 }
 
+export interface ToolParamConfig {
+  options?: Array<{ label: string; value: string }>
+  format?: string
+  allowRelative?: boolean
+  minDate?: string
+  maxDate?: string
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  pattern?: string
+  minLength?: number
+  maxLength?: number
+  placeholder?: string
+  [key: string]: any
+}
+
 export interface ToolParam {
   name: string
-  type: 'string' | 'number' | 'boolean'
+  type: 'string' | 'number' | 'boolean' | 'date' | 'select' | 'multiselect' | 'text' | 'email' | 'phone'
   description: string
   defaultValue?: any
   isRequired: boolean
   extractPrompt?: string    // prompt untuk extract value dari user input
+  label?: string            // UI display name
+  config?: ToolParamConfig  // validation rules and UI config
+  order?: number            // display order
+  isHidden?: boolean        // hide from user
 }
 
 export interface ToolMissingParams {
@@ -111,51 +138,54 @@ export interface ToolMissingParams {
   missing: string[]
 }
 
+export type ParamResourceType = 'tool' | 'skill'
+
+export interface ResourceParamOwner {
+  resource: ParamResourceType
+  key: string
+  name: string
+  description?: string | null
+  params: ToolParam[]
+}
+
+export interface ResourceMissingParams {
+  resource: ParamResourceType
+  key: string
+  name?: string
+  missing: string[]
+  params?: ToolParam[]
+}
+
 export interface IntentMatch {
   intent: Intent
   score: number             // cosine similarity score (0-1)
   extractedParams?: Record<string, unknown>
+  metadata?: {
+    fallbackReason?: string;
+    originalQuery?: string;
+    [key: string]: any;
+  }
 }
 
 export interface PlannerInput {
-  userText: string
+  input: PipelineInput
   candidates: {
-    handlers: string[]       // slug only (backward compatibility)
+    skills?: string[]        // slug only (internal skills)
     tools: string[]           // slug only (backward compatibility)
     knowledge: string[]
-    handlerDetails?: any[]     // slug only (backward compatibility)
+    skillsDetails?: any[]      // internal skill metadata/candidates
     toolsDetails?: any[]      // full intent objects for tools
     knowledgeDetails?: any[]  // full intent objects for knowledge
   }
-  recentUsage?: RecentPlannerInput
-  language?: string
+
+  episodicMemory?: EpisodicMemory | null
+  skillSignal?: SkillSignal
+  perceptionFrame?: import('./perception.types').PerceptionFrame | null
   // C-009 FIX: Optional resource recommendation from confidence decision
-  recommendedResource?: 'tool' | 'handler' | 'knowledge'
+  recommendedResource?: 'tool' | 'skill' | 'knowledge'
 }
 
-// export interface PlannerOutput {
-//   handlers?: string[];
-//   tools?: string[];
-//   knowledge?: string[];
-//   execution_order?: string[];
-//   chat: boolean;
-
-//   confidence?: number
-//   shouldClarify?: boolean
-//   reasoning?: string
-
-//   // NEW: Multi-step task planning format
-//   mode?: "single_step" | "multi_step"
-//   tasks?: Array<{
-//     id: string
-//     resource: "tool" | "handler" | "knowledge"
-//     key: string
-//     depends_on: string[]
-//   }>
-// }
-
 export interface RecentPlannerInput {
-  handlers?: string[];
   tools?: string[];
   knowledge?: string[];
   chat: boolean;
@@ -198,12 +228,38 @@ export type PipelineInput = {
 // OUTPUT ke Chat Service
 // ============================================================
 
+export interface PipelineExecutedTaskDetail {
+  key: string
+  resource: 'tool' | 'skill' | 'knowledge'
+  toolSlug?: string
+}
+
+export interface PipelineMetadata {
+  durationMs?: number
+  totalTime?: number
+  executedTasks?: number
+  totalTasks?: number
+  executedTasksDetails?: PipelineExecutedTaskDetail[]
+  activePlan?: PlannerOutput | null
+  resolvedParams?: Record<string, unknown>
+  missingParams?: ToolMissingParams[]
+  missingResourceParams?: ResourceMissingParams[]
+  resourceParams?: ResourceParamOwner[]
+  collectedParams?: Record<string, unknown>
+  intentSlugs?: string[]
+  originalPlan?: PlannerOutput
+  fallbackToChat?: number
+  hasCachedContext?: boolean
+  memoryUpdateOwner?: string
+  [key: string]: unknown
+}
+
 export type PipelineResult = {
   intent: string
   score: number
   apiResult: unknown
   naturalResponse: string
-  metadata: Record<string, number>
+  metadata: PipelineMetadata
 }
 
 export interface PipelineError {
@@ -311,6 +367,8 @@ export interface PendingIntentState {
     missing: string[]
   }>
 
+  missingResourceParams?: ResourceMissingParams[]
+
   originalPlan?: PlannerOutput;
   
   // Retry tracking
@@ -335,11 +393,3 @@ export type bodyKnowledgeSource = {
   filePath?: string | null
 }
 
-export type EpisodicMemory = {
-  id: string
-  user_id: string
-  app_name: string
-  summary: string
-  intentsSeen: string[]
-  created_at: Date
-}

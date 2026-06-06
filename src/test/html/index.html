@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AI Chat Interface for HRIS">
+  <title>AI Chat - HRIS Assistant</title>
+  
+  <!-- CSS -->
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/responsive.css">
+  <link rel="stylesheet" href="assets/css/connection-status.css">
+</head>
+<body>
+  <div id="app" class="chat-container">
+    <!-- Header -->
+    <header class="chat-header">
+      <div class="header-content">
+        <h1 class="header-title">HRIS AI Assistant</h1>
+        <p class="header-subtitle">Powered by VIPER</p>
+        <div class="header-connection-status">
+          <span class="connection-status-indicator"></span>
+          <span id="connectionStatusText">Connecting...</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="clearChat" class="btn btn-icon" title="Clear chat">
+          <span>🗑️</span>
+        </button>
+        <button id="menu" class="btn btn-icon" title="Menu">
+          <span>☰</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Chat Area -->
+    <main class="chat-main">
+      <div id="messages" class="messages-container">
+        <!-- Messages will be inserted here -->
+      </div>
+      
+      <!-- Loading Spinner -->
+      <div id="loader" class="loader hidden">
+        <div class="spinner"></div>
+        <p>AI sedang berpikir...</p>
+      </div>
+    </main>
+
+    <!-- Input Area -->
+    <footer class="chat-footer">
+      <div class="input-wrapper">
+        <input
+          id="messageInput"
+          type="text"
+          class="message-input"
+          placeholder="Ketik pertanyaan Anda di sini..."
+          maxlength="1000"
+          autocomplete="off"
+        >
+        <button id="sendBtn" class="btn btn-send" title="Send message">
+          <span>➤</span>
+        </button>
+      </div>
+      <p class="char-count"><span id="charCount">0</span>/1000</p>
+    </footer>
+  </div>
+
+  <!-- JavaScript -->
+  <script type="module">
+    import { CONFIG } from './assets/js/config.js';
+    import { storageManager } from './assets/js/storage-manager.js';
+    import { messageHandler } from './assets/js/message-handler.js';
+    import { uiManager } from './assets/js/ui-manager.js';
+    import { apiClient } from './assets/js/api-client.js';
+    import { typingIndicator } from './assets/js/typing-indicator.js';
+    import { wsClient, CONNECTION_STATUS } from './assets/js/ws-client.js';
+    import chatApp from './assets/js/app.js';
+    
+    // Initialize WebSocket if enabled
+    if (CONFIG.ENABLE_WEBSOCKET) {
+      console.log('[Init] WebSocket enabled');
+      
+      // Setup WebSocket callbacks
+      wsClient.onStatusChange((status) => {
+        const statusText = document.getElementById('connectionStatusText');
+        const statusIndicator = document.querySelector('.connection-status-indicator');
+        
+        if (statusText && statusIndicator) {
+          statusText.textContent = status;
+          statusIndicator.parentElement.className = `header-connection-status connection-status ${status}`;
+        }
+      });
+      
+      wsClient.onMessage((message) => {
+        console.log('[WS] Message:', message);
+        
+        // Handle chat response
+        if (message.type === 'response' && chatApp.handleWSResponse) {
+          chatApp.handleWSResponse(message);
+        }
+      });
+      
+      // Connect
+      wsClient.connect();
+    } else {
+      console.log('[Init] WebSocket disabled, using HTTP only');
+    }
+    
+    // App is auto-initialized in app.js
+  </script>
+</body>
+</html>

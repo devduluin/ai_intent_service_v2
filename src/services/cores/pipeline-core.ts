@@ -8,7 +8,8 @@ import { confidenceDecisionService } from '../confidence-decision.service';
 import { vectorService } from '../vector.service';
 import { withTimeout } from '../../utils/async-helpers.util';
 import { appLogger } from '../../utils/logger.util';
-import { config } from '../../config';
+import { buildTemporalFollowUpResidue } from '../../utils/text-intent-cleanup.util';
+import { containsWriteSuccessClaim, hasWriteProof } from '../../utils/recovery-signal.util';
 
 import { PlanValidator } from './validators/plan.validator';
 import { TemporalInjector, EntityInjector } from './injectors';
@@ -20,22 +21,33 @@ import {
   IntentMatchingStage,
   PlannerStage,
   ExecutionStage,
-  NaturalizationStage
+  NaturalizationStage,
+  ComparisonStage,
+  FallbackMatchesStage,
+  PerceptionStage,
+  SelfCorrectionStage
 } from './stages';
+import { OfferGenerationStage } from './stages/offer-generation.stage';
+import { skillSignalService } from '../skill-signal.service';
+import { memoryTaskReplayService } from '../memory-task-replay.service';
+import { emotionToneService } from '../emotion-tone.service';
+import { selfCorrectionRecoveryService } from '../self-correction-recovery.service';
 
 import type { Agent } from '../../types/agent.types';
 import type { EpisodicMemory } from '../../types/episodic-memory.types';
-import type { WorkingMemoryData } from '../workingMemory.service';
+import type { WorkingMemoryData } from '../../types/working-memory.type';
 import type {
   PipelineInput,
   PipelineResult,
   Intent,
   IntentMatch,
   ToolMissingParams,
-  ToolParam
+  ToolParam,
+  ResourceMissingParams,
+  ResourceParamOwner
 } from '../../types';
 import type { PlannerOutput } from '../../types/planner.types';
-import type { UserMessageSignals } from '../query-decomposition.service';
+import type { UserMessageSignals, DecomposedQuery } from '../query-decomposition.service';
 
 // ============================================================
 // Types
@@ -50,14 +62,26 @@ export interface PipelineCoreConfig {
 
 export interface PipelineExecutionContext {
   agent: Agent;
+  input: PipelineInput;  // ✅ ADDED: For episodic memory lookup
+  memoryContext: ContextMemory;
+  startTotal: number;
+}
+
+export interface ContextMemory {
   workingMemory: WorkingMemoryData | null;
   episodicMemory: EpisodicMemory | null;
-  startTotal: number;
 }
 
 export interface PipelineBranchResult {
   matches: IntentMatch[];
-  source: 'multi_intent' | 'single_intent' | 'memory_fallback';
+  source: 'multi_intent' | 'single_intent' | 'memory_fallback' | 'planner_candidate_fallback' | 'general_chat_fallback';
+}
+
+interface ParamExtractionResult {
+  params: Record<string, unknown>;
+  missingResourceParams: ResourceMissingParams[];
+  missingToolsParams: ToolMissingParams[];
+  resourceParams: ResourceParamOwner[];
 }
 
 // ============================================================
@@ -96,6 +120,11 @@ export class PipelineCore {
   private plannerStage: PlannerStage;
   private executionStage: ExecutionStage;
   private naturalizationStage: NaturalizationStage;
+  private comparisonStage: ComparisonStage;
+  private offerGenerationStage: OfferGenerationStage;
+  private fallbackMatchesStage: FallbackMatchesStage;
+  private perceptionStage: PerceptionStage;
+  private selfCorrectionStage: SelfCorrectionStage;
   
   // Validators & Injectors
   private planValidator: PlanValidator;
@@ -112,6 +141,11 @@ export class PipelineCore {
     this.plannerStage = new PlannerStage();
     this.executionStage = new ExecutionStage();
     this.naturalizationStage = new NaturalizationStage();
+    this.comparisonStage = new ComparisonStage();
+    this.offerGenerationStage = new OfferGenerationStage();
+    this.fallbackMatchesStage = new FallbackMatchesStage();
+    this.perceptionStage = new PerceptionStage();
+    this.selfCorrectionStage = new SelfCorrectionStage();
     
     // Initialize validators & injectors
     this.planValidator = new PlanValidator();
@@ -136,9 +170,13 @@ export class PipelineCore {
    * @throws Error if agent context is invalid
    */
   async execute(
-    input: PipelineInput,
     context: PipelineExecutionContext
   ): Promise<PipelineResult> {
+    
+    const { agent, input, memoryContext, startTotal } = context;
+
+    const { workingMemory, episodicMemory } = memoryContext;
+
     // C-001: Agent Context Validation
     if (!context) {
       const error = new Error('[PipelineCore] Execution context is null or undefined');
@@ -148,8 +186,6 @@ export class PipelineCore {
       });
       throw error;
     }
-
-    const { agent, workingMemory, episodicMemory, startTotal } = context;
 
     // Validate agent exists
     if (!agent) {
@@ -181,6 +217,8 @@ export class PipelineCore {
     let safePlan: PlannerOutput | null = null;
     let safeParams: Record<string, unknown> = {};
     let executionResult: any = null;
+    let perceptionFrame: any = null;
+    let selfCorrectionResult: import('../../types/self-correction.types').SelfCorrectionResult | null = null;
 
     try {
       // ============================================================
@@ -214,6 +252,7 @@ export class PipelineCore {
       );
 
       const { text: preprocessedText, hasMultipleIntents, signals } = decompositionResult;
+      signals.skill = skillSignalService.detect(preprocessedText);
 
       appLogger.debug('[PipelineCore] Query decomposition completed', {
         originalText: input.text,
@@ -221,30 +260,170 @@ export class PipelineCore {
         hasMultipleIntents,
         signals
       });
+      
 
       // ============================================================
-      // STAGE 3: EMBEDDING & INTENT MATCHING (branching logic) - C-006 Timeout
+      // STAGE 2.5: PERCEPTION (intent frame detection) — NEW
       // ============================================================
-      branchResult = await withTimeout(
-        this.executeMatchingBranch(
-          hasMultipleIntents,
-          decompositionResult,
-          intents,
-          agent,
-          orchestrationInput,
-          workingMemory
-        ),
-        this.config.defaultTimeout,
-        'executeMatchingBranch'
-      );
+      let perceptionResult: {
+        frame: import('../../types/perception.types').PerceptionFrame;
+        skipEmbedding?: boolean;
+      };
+      try {
+        perceptionResult = await withTimeout(
+          this.perceptionStage.execute({
+            text: preprocessedText,
+            decomposition: decompositionResult,
+            workingMemory,
+            episodicMemory
+          }),
+          this.config.defaultTimeout,
+          'perceptionStage.execute'
+        );
+      } catch (perceptionError) {
+        appLogger.warn('[PipelineCore] Perception stage failed, defaulting to direct_task', {
+          error: perceptionError instanceof Error ? perceptionError.message : perceptionError
+        });
+        perceptionResult = {
+          frame: {
+            type: 'direct_task',
+            operations: ['execute'],
+            confidence: 0.65,
+            reasoning: ['Perception stage failed, defaulting to direct_task']
+          },
+          skipEmbedding: false
+        };
+      }
 
-      finalVectorHints = branchResult.matches;
+      perceptionFrame = perceptionResult.frame;
 
-      appLogger.debug('[PipelineCore] Intent matching completed', {
-        matchCount: finalVectorHints.length,
-        topScore: finalVectorHints[0]?.score ?? 0,
-        source: branchResult.source
+      appLogger.debug('[PipelineCore] Perception completed', {
+        frameType: perceptionFrame.type,
+        confidence: perceptionFrame.confidence,
+        operations: perceptionFrame.operations,
+        skipEmbedding: perceptionResult.skipEmbedding
       });
+
+      // ============================================================
+      // STAGE 2.6: MEMORY TASK REPLAY BRANCH (Option B)
+      // ============================================================
+      if (perceptionFrame.type === 'memory_task_replay' && perceptionFrame.confidence >= 0.65) {
+        appLogger.info('[PipelineCore] Branching to MemoryTaskReplayService', {
+          userId: input.user_id,
+          appName: input.app_name
+        });
+
+        const replayResult = await memoryTaskReplayService.recallAndSelect({
+          frame: perceptionFrame,
+          input: orchestrationInput
+        });
+
+        if (replayResult.decision === 'auto_execute') {
+          const replayedPlan = {
+            mode: replayResult.task.taskPlan.mode || 'single_step',
+            chat: false,
+            tasks: replayResult.task.taskPlan.tasks || [],
+            reasoning: 'Memory replay: ' + replayResult.reasoning,
+            confidence: perceptionFrame.confidence
+          };
+          const replayParams = this.buildReplayParams(orchestrationInput, replayResult.task.memoryItem);
+
+          const replayedExecution = await withTimeout(
+            this.executionStage.execute(replayedPlan, orchestrationInput, replayParams),
+            this.config.defaultTimeout,
+            'replayExecutionStage.execute'
+          );
+
+          const naturalResponse = await withTimeout(
+            this.naturalizationStage.execute(replayedExecution.results, orchestrationInput, agent, {
+              contextCache: {
+                workingMemory: workingMemory || undefined,
+                originalQuery: input.text,
+                emotion: perceptionFrame.emotion
+              }
+            }),
+            this.config.defaultTimeout,
+            'replayNaturalizationStage.execute'
+          );
+
+          return {
+            intent: replayResult.task.memoryItem.intent || 'memory_replay',
+            score: perceptionFrame.confidence,
+            apiResult: replayedExecution.results,
+            naturalResponse: naturalResponse || replayResult.reasoning,
+            metadata: {
+              executedTasks: replayedExecution.metrics.executedTasks,
+              totalTasks: replayedExecution.metrics.totalTasks,
+              executedTasksDetails: replayedExecution.metrics.executedTasksDetails || replayedPlan.tasks.map(function(t) { return { key: t.key, resource: t.resource }; }),
+              resolvedParams: replayParams,
+              flowStage: 'memory_replay',
+              originalPerceptionFrame: perceptionFrame
+            }
+          };
+        }
+
+        if (replayResult.decision === 'clarify_multiple') {
+          const candidates = replayResult.candidates.map(function(c, i) {
+            return (i + 1) + '. "' + (c.memoryItem.topicLabel || c.memoryItem.summary) + '"';
+          }).join('\n');
+
+          return {
+            intent: 'memory_replay_clarify',
+            score: perceptionFrame.confidence,
+            apiResult: replayResult,
+            naturalResponse: replayResult.reasoning + '\n\n' + candidates + '\n\nSilakan pilih nomor tugas yang ingin dijalankan ulang.',
+            metadata: {
+              flowStage: 'memory_replay_clarify',
+              originalPerceptionFrame: perceptionFrame
+            }
+          };
+        }
+
+        // no_rerunnable
+        return {
+          intent: 'memory_replay_none',
+          score: perceptionFrame.confidence,
+          apiResult: replayResult,
+          naturalResponse: replayResult.reasoning,
+          metadata: {
+            flowStage: 'memory_replay_none',
+            originalPerceptionFrame: perceptionFrame
+          }
+        };
+      }
+
+      // ============================================================
+      // STAGE 3: EMBEDDING & INTENT MATCHING (skip if perception is confident)
+      // ============================================================
+      if (perceptionResult.skipEmbedding) {
+        appLogger.info('[PipelineCore] Skipping embedding — perception frame is confident', {
+          frameType: perceptionFrame.type,
+          frameConfidence: perceptionFrame.confidence
+        });
+        finalVectorHints = [];
+        branchResult = { matches: [], source: 'perception_skip' };
+      } else {
+        branchResult = await withTimeout(
+          this.executeMatchingBranch(
+            hasMultipleIntents,
+            decompositionResult,
+            intents,
+            agent,
+            orchestrationInput,
+            workingMemory
+          ),
+          this.config.defaultTimeout,
+          'executeMatchingBranch'
+        );
+
+        finalVectorHints = branchResult.matches;
+
+        appLogger.debug('[PipelineCore] Intent matching completed', {
+          matchCount: finalVectorHints.length,
+          topScore: finalVectorHints[0]?.score ?? 0,
+          source: branchResult.source
+        });
+      }
 
       // ============================================================
       // STAGE 4: PLANNING - C-006 Timeout
@@ -253,7 +432,9 @@ export class PipelineCore {
         this.plannerStage.execute(
           finalVectorHints,
           orchestrationInput,
-          agent
+          agent,
+          { usePlan: true, timeout: this.config.plannerTimeout, skillSignal: signals.skill, perceptionFrame },
+          memoryContext
         ),
         this.config.plannerTimeout,
         'plannerStage.execute'
@@ -264,6 +445,8 @@ export class PipelineCore {
         tasks: plannerOutput.tasks || [],
         chat: plannerOutput.chat === true
       };
+
+      appLogger.debug('[PipelineCore] Planner output', { plan: safePlan });
 
       // ============================================================
       // STAGE 5: CONFIDENCE DECISION
@@ -286,10 +469,10 @@ export class PipelineCore {
       // Log if recommended resource differs from plan for debugging
       if (decision.recommendedResource) {
         const planHasTools = safePlan.tasks?.some(t => t.resource === 'tool')
-        const planHasHandlers = safePlan.tasks?.some(t => t.resource === 'handler')
+        const planHasSkills = safePlan.tasks?.some(t => t.resource === 'skill')
         const planHasKnowledge = safePlan.tasks?.some(t => t.resource === 'knowledge')
 
-        const planResourceType = planHasTools ? 'tool' : planHasHandlers ? 'handler' : planHasKnowledge ? 'knowledge' : 'none'
+        const planResourceType = planHasTools ? 'tool' : planHasSkills ? 'skill' : planHasKnowledge ? 'knowledge' : 'none'
 
         if (decision.recommendedResource !== planResourceType && decision.confidence >= 0.70) {
           appLogger.warn('[PipelineCore] Resource mismatch detected - Planner may need adjustment', {
@@ -321,57 +504,170 @@ export class PipelineCore {
         throw error;
       }
 
-      if (shouldFallbackToChat) {
-        appLogger.info('[PipelineCore] Fallback to chat decision', {
+      appLogger.debug('[PipelineCore] Normalized signals', {
+        actionHints: signals.actionHints,
+        formatHints: signals.formatHints,
+        temporalHints: signals.temporalHints,
+        temporalDetailsCount: signals.temporalDetails?.length || 0,
+        entityHintsCount: signals.entityHints?.length || 0,
+        asksForFile: signals.asksForFile,
+        asksForRealtimeData: signals.asksForRealtimeData,
+        comparison: signals.comparison
+      });
+
+      const hasStandaloneComparisonTemporalPair = (signals.temporalDetails?.length || 0) >= 2;
+      if (
+        signals.comparison?.isComparison &&
+        (signals.comparison.baseline?.source === 'current_query' || hasStandaloneComparisonTemporalPair)
+      ) {
+        appLogger.info('[PipelineCore] Standalone comparison candidate detected', {
           userId: input.user_id,
-          appName: input.app_name
+          appName: input.app_name,
+          baselineSource: signals.comparison.baseline?.source,
+          temporalCount: signals.temporalDetails?.length || 0,
+          planTaskCount: safePlan.tasks?.length || 0
         });
-        return {
-          intent: 'general_chat',
-          score: decision.confidence,
-          apiResult: null,
-          naturalResponse: '',
-          metadata: {
-            durationMs: Date.now() - startTotal,
-            fallbackToChat: 1
+
+        const comparisonResult = await withTimeout(
+          this.comparisonStage.tryExecuteStandalone({
+            input,
+            agent,
+            plan: safePlan,
+            decompositionResult,
+            startTotal,
+            score: decision.confidence,
+            analyzerSkill: 'trend_analyzer'
+          }),
+          this.config.plannerTimeout * 2, // Comparison needs 2x timeout (baseline + target + analyzer)
+          'comparisonStage.tryExecuteStandalone'
+        );
+
+        if (comparisonResult.handled && comparisonResult.result) {
+          return comparisonResult.result;
+        }
+
+        appLogger.debug('[PipelineCore] Standalone comparison not handled, continuing normal pipeline', {
+          userId: input.user_id,
+          appName: input.app_name,
+          reason: comparisonResult.reason
+        });
+      }
+
+      if (shouldFallbackToChat) {
+        // PerceptionFrame override: high-confidence perception frames bypass
+        // the normal confidence fallback — the frame itself is the authority.
+        const isPerceptionRouted =
+          perceptionFrame &&
+          perceptionFrame.confidence >= 0.65 &&
+          (perceptionFrame.type === 'memory_question' ||
+           perceptionFrame.type === 'memory_task_replay' ||
+           perceptionFrame.type === 'automation_request' ||
+           perceptionFrame.type === 'small_talk');
+
+        if (!isPerceptionRouted) {
+          if (plannerOutput.needsClarification || decision.action === 'clarify') {
+            const clarificationQuestion = plannerOutput.clarificationQuestion
+              || 'Saya belum yakin permintaan mana yang Anda maksud. Bisa jelaskan sedikit lebih spesifik?';
+
+            appLogger.info('[PipelineCore] Planner clarification requested', {
+              userId: input.user_id,
+              appName: input.app_name,
+              confidence: decision.confidence,
+              planTaskCount: safePlan.tasks?.length || 0,
+              needsClarification: plannerOutput.needsClarification,
+              strategy: plannerOutput.strategy
+            });
+
+            return {
+              intent: 'clarification',
+              score: decision.confidence,
+              apiResult: null,
+              naturalResponse: clarificationQuestion,
+              metadata: {
+                durationMs: Date.now() - startTotal,
+                needsClarification: true,
+                clarificationQuestion,
+                activePlan: safePlan
+              }
+            };
           }
-        };
+
+          appLogger.info('[PipelineCore] Fallback to chat decision', {
+            userId: input.user_id,
+            appName: input.app_name
+          });
+          return {
+            intent: 'general_chat',
+            score: decision.confidence,
+            apiResult: null,
+            naturalResponse: '',
+            metadata: {
+              durationMs: Date.now() - startTotal,
+              fallbackToChat: 1
+            }
+          };
+        }
+
+        appLogger.info('[PipelineCore] Perception frame overrides shouldFallbackToChat', {
+          frameType: perceptionFrame!.type,
+          frameConfidence: perceptionFrame!.confidence,
+          decisionAction: decision.action
+        });
       }
 
       // ============================================================
       // STAGE 7: PARAM EXTRACTION & INJECTION
       // ============================================================
       // C-009: Assign to declared variable for memory cleanup
-      safeParams = await this.extractAndInjectParams(
+      const paramExtraction = await this.extractAndInjectParams(
         enrichedUserQuery,
         safePlan,
         input,
-        signals
+        signals,
+        decompositionResult  // NEW: Pass decomposition result
       );
+      safeParams = paramExtraction.params;
 
       // Check for missing params (slot filling trigger)
-      const missingParamsResult = await this.checkMissingParams(input, agent, safePlan, safeParams);
+      const missingParamsResult = await this.checkMissingParams(input, agent, paramExtraction);
       if (missingParamsResult.hasMissing) {
         // Get intent slugs for slot filling context
         const intentSlugsForSlotFilling = finalVectorHints
           .filter(match => match.intent.tools && match.intent.tools.length > 0)
           .map(match => match.intent.slug);
+        const fallbackResourceSlugs = safePlan.tasks
+          .filter(task => task.resource === 'tool' || task.resource === 'skill')
+          .map(task => task.key);
+        const slotFillingSlugs = intentSlugsForSlotFilling.length > 0
+          ? intentSlugsForSlotFilling
+          : fallbackResourceSlugs;
 
         return {
           intent: 'slot_filling',
           score: 1,
           apiResult: null,
-          naturalResponse: missingParamsResult.question || '',
+          naturalResponse: emotionToneService.adaptShortMessage(
+            missingParamsResult.question || '',
+            perceptionFrame?.emotion
+          ),
           metadata: {
             durationMs: Date.now() - startTotal,
-            missingParams: missingParamsResult.missingParams as any,
-            collectedParams: safeParams as any,
-            intentSlugs: intentSlugsForSlotFilling,
+            missingParams: missingParamsResult.missingParams,
+            missingResourceParams: missingParamsResult.missingResourceParams,
+            resourceParams: paramExtraction.resourceParams,
+            collectedParams: safeParams,
+            intentSlugs: slotFillingSlugs,
             // C-009 FIX: Include the actual plan with tasks for execution after slot filling
             originalPlan: safePlan
-          } as any
+          }
         };
       }
+
+      appLogger.info('[PipelineCore] No missing params detected', {
+        userId: input.user_id,
+        appName: input.app_name,
+        missingParamsResult
+      });
 
       // ============================================================
       // STAGE 8: EXECUTION - C-006 Timeout
@@ -394,17 +690,127 @@ export class PipelineCore {
       const apiResults = executionResult.results;
 
       // ============================================================
+      // STAGE 8.5: SELF-CORRECTION & RECOVERY
+      // ============================================================
+      selfCorrectionResult = await withTimeout(
+        this.selfCorrectionStage.execute({
+          input: orchestrationInput,
+          perceptionFrame,
+          plan: safePlan,
+          params: safeParams,
+          executionResult,
+          decompositionResult,
+          workingMemory,
+          recoveryAttempt: 0
+        }),
+        this.config.defaultTimeout,
+        'selfCorrectionStage.execute'
+      );
+
+      if (selfCorrectionResult.shouldRecover) {
+        selfCorrectionResult = await withTimeout(
+          selfCorrectionRecoveryService.recover({
+            input: orchestrationInput,
+            agent,
+            plan: safePlan,
+            params: safeParams,
+            decompositionResult,
+            correction: selfCorrectionResult,
+            startTotal
+          }),
+          this.config.plannerTimeout * 2,
+          'selfCorrectionRecoveryService.recover'
+        );
+
+        if (selfCorrectionResult.recoveredPipelineResult) {
+          return selfCorrectionResult.recoveredPipelineResult;
+        }
+
+        if (selfCorrectionResult.recoveredExecutionResult) {
+          executionResult = selfCorrectionResult.recoveredExecutionResult;
+        }
+      }
+
+      const correctedApiResults = executionResult.results;
+
+      if (selfCorrectionResult.action === 'ask_clarification') {
+        const clarificationQuestion = selfCorrectionResult.clarificationQuestion
+          || 'Saya menemukan bagian yang belum konsisten dengan permintaan Anda. Bisa beri detail yang lebih spesifik?';
+
+        return {
+          intent: 'self_correction_clarification',
+          score: selfCorrectionResult.confidence,
+          apiResult: correctedApiResults,
+          naturalResponse: emotionToneService.adaptShortMessage(
+            clarificationQuestion,
+            perceptionFrame?.emotion
+          ),
+          metadata: {
+            durationMs: Date.now() - startTotal,
+            recovery: selfCorrectionResult.recoveryContext,
+            recoveryTrace: selfCorrectionResult.trace,
+            activePlan: safePlan,
+            resolvedParams: safeParams,
+            executedTasks: executionResult.metrics.executedTasks,
+            totalTasks: executionResult.metrics.totalTasks,
+            executedTasksDetails: executionResult.metrics.executedTasksDetails || []
+          }
+        };
+      }
+
+      //  appLogger.info('[PipelineCore] Execution result', {
+      //   userId: input.user_id,
+      //   appName: input.app_name,
+      //   apiResults
+      // });
+
+      const offerResult = await this.offerGenerationStage.execute({
+        input,
+        plan: safePlan,
+        params: safeParams,
+        results: correctedApiResults,
+        executedTasks: executionResult.metrics.executedTasksDetails || [],
+        workingMemory
+      });
+
+      const selectedOffer = offerResult.selectedOffer;
+
+      // ============================================================
       // STAGE 9: NATURALIZATION - C-006 Timeout
       // ============================================================
       const naturalResponse = await withTimeout(
         this.naturalizationStage.execute(
-          apiResults,
+          correctedApiResults,
           { ...input, text: enrichedUserQuery },
-          agent
+          agent,
+          {
+            contextCache: {
+              workingMemory: workingMemory || undefined,
+              entities: safeParams,
+              originalQuery: input.text,
+              allowedOffer: selectedOffer
+                ? {
+                    label: selectedOffer.label,
+                    reason: selectedOffer.reason,
+                    suggestedText: selectedOffer.suggestedText || selectedOffer.label
+                  }
+                : undefined,
+              emotion: perceptionFrame?.emotion,
+              recoveryContext: selfCorrectionResult?.recoveryContext
+            }
+          }
         ),
         this.config.defaultTimeout,
         'naturalizationStage.execute'
       );
+
+      const guardedNaturalResponse = containsWriteSuccessClaim(naturalResponse) && !hasWriteProof(executionResult)
+        ? emotionToneService.adaptShortMessage(
+            'Saya belum punya bukti bahwa aksi tersebut benar-benar berhasil dijalankan. Saya bisa lanjutkan setelah konfirmasi atau data eksekusinya lengkap.',
+            perceptionFrame?.emotion
+          )
+        : naturalResponse;
+      const blockedUnsafeSuccessClaim = guardedNaturalResponse !== naturalResponse;
 
       // ============================================================
       // BUILD RESULT
@@ -427,12 +833,19 @@ export class PipelineCore {
       return {
         intent: intentLabel,
         score: intentScore,
-        apiResult: apiResults,
-        naturalResponse,
+        apiResult: correctedApiResults,
+        naturalResponse: guardedNaturalResponse,
         metadata: {
           durationMs: Date.now() - startTotal,
           executedTasks: executionResult.metrics.executedTasks,
-          totalTasks: executionResult.metrics.totalTasks
+          totalTasks: executionResult.metrics.totalTasks,
+          executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
+          activePlan: safePlan,
+          resolvedParams: safeParams,
+          activeOffer: selectedOffer,
+          recovery: selfCorrectionResult?.recoveryContext,
+          recoveryTrace: selfCorrectionResult?.trace || [],
+          blockedUnsafeSuccessClaim
         }
       };
 
@@ -458,6 +871,7 @@ export class PipelineCore {
       safePlan = null;
       safeParams = {};
       executionResult = null;
+      selfCorrectionResult = null;
 
       // Force garbage collection if available
       // Note: This requires Node.js to be run with --expose-gc flag
@@ -512,6 +926,37 @@ export class PipelineCore {
   ): Promise<PipelineBranchResult> {
     const { text: preprocessedText, subQueries, signals } = decompositionResult;
 
+    if (this.isTemporalOnlyFollowUp(preprocessedText, signals) && workingMemory?.activeIntent) {
+      try {
+        const memoryMatches = await vectorService.getIntentBySlug(
+          intents,
+          workingMemory.activeIntent
+        );
+
+        if (memoryMatches && memoryMatches.length > 0) {
+          appLogger.info('[PipelineCore] Temporal-only follow-up routed to active intent', {
+            userId: input.user_id,
+            appName: input.app_name,
+            activeIntent: workingMemory.activeIntent,
+            activeTool: workingMemory.activeTool,
+            temporalDetails: signals.temporalDetails || []
+          });
+
+          return {
+            matches: memoryMatches,
+            source: 'memory_fallback'
+          };
+        }
+      } catch (memoryError) {
+        appLogger.warn('[PipelineCore] Temporal-only active intent fallback failed', {
+          userId: input.user_id,
+          appName: input.app_name,
+          activeIntent: workingMemory.activeIntent,
+          error: memoryError instanceof Error ? memoryError.message : memoryError
+        });
+      }
+    }
+
     // BRANCH 1: Multi-intent mode
     if (hasMultipleIntents && this.config.allowCrossIntent && subQueries.length > 0) {
       appLogger.info('[PipelineCore] Multi-intent mode: Processing sub-queries', {
@@ -521,7 +966,8 @@ export class PipelineCore {
       const allMatches = await this.processMultiIntentQueries(
         subQueries,
         intents,
-        agent
+        agent,
+        workingMemory
       );
 
       const boostedMatches = this.applySignalBoost(allMatches, signals);
@@ -551,16 +997,32 @@ export class PipelineCore {
         queryEmbedding,
         intents,
         agent,
-        { signals }
+        { signals },
+        workingMemory?.activeIntent
       );
 
       // C-002: Error Recovery - Memory fallback with proper error handling
       if (!matches || matches.length === 0) {
-        appLogger.warn('[PipelineCore] No intent matches found, attempting memory fallback', {
+        appLogger.warn('[PipelineCore] No intent matches found, building planner fallback candidates', {
           userId: input.user_id,
           appName: input.app_name,
-          hasWorkingMemory: !!workingMemory
+          hasWorkingMemory: !!workingMemory,
+          intentCount: intents.length
         });
+
+        const fallbackMatches = this.fallbackMatchesStage.execute({
+          intents,
+          agent,
+          userText: queryForMatching,
+          signals
+        });
+
+        if (fallbackMatches.length > 0) {
+          return {
+            matches: fallbackMatches,
+            source: 'planner_candidate_fallback'
+          };
+        }
 
         if (workingMemory?.activeIntent) {
           try {
@@ -585,14 +1047,36 @@ export class PipelineCore {
           }
         }
 
-        // No matches and no fallback - throw error
-        const error = new Error('[PipelineCore] No intent matches found and no memory fallback available');
-        appLogger.error('Pipeline matching failed: no matches', {
+        // No matches and no fallback - FALLBACK TO GENERAL CHAT!
+        appLogger.info('[PipelineCore] No intent matches, falling back to general chat', {
           userId: input.user_id,
           appName: input.app_name,
           queryLength: queryForMatching.length
         });
-        throw error;
+
+        // Create general chat intent match
+        const generalChatMatch: IntentMatch = {
+          intent: {
+            slug: 'general_chat',
+            name: 'General Chat',
+            description: 'General conversation fallback',
+            examples: [],
+            handlers: [],
+            tools: [],
+            enabled: true,
+            isFallback: true
+          } as any,
+          score: 1.0,  // High confidence for fallback
+          metadata: {
+            fallbackReason: 'no_intent_matches',
+            originalQuery: input.text
+          }
+        };
+
+        return {
+          matches: [generalChatMatch],
+          source: 'general_chat_fallback'
+        };
       }
 
       // Apply limit if cross-intent disabled
@@ -630,7 +1114,8 @@ export class PipelineCore {
   private async processMultiIntentQueries(
     subQueries: string[],
     intents: Intent[],
-    agent: Agent
+    agent: Agent,
+    workingMemory: WorkingMemoryData | null
   ): Promise<IntentMatch[]> {
     const allMatches: IntentMatch[] = [];
     const processedIntents = new Set<string>();
@@ -661,7 +1146,8 @@ export class PipelineCore {
             embedding,
             intents,
             agent,
-            { topK: 3 }
+            { topK: 3 },
+            workingMemory?.activeIntent
           );
 
           return { query, matches, success: true };
@@ -820,19 +1306,29 @@ export class PipelineCore {
     enrichedUserQuery: string,
     safePlan: PlannerOutput,
     input: PipelineInput,
-    signals: UserMessageSignals
-  ): Promise<Record<string, unknown>> {
+    signals: UserMessageSignals,
+    decompositionResult: DecomposedQuery  // UPDATED: Use DecomposedQuery type
+  ): Promise<ParamExtractionResult> {
     let safeParams: Record<string, unknown> = {};
+    let missingResourceParams: ResourceMissingParams[] = [];
+    let missingToolsParams: ToolMissingParams[] = [];
+    let resourceParams: ResourceParamOwner[] = [];
 
     // C-003: Type-Safe Param Injection - Validate input structure
     if (!input) {
       appLogger.error('[PipelineCore] Input is null/undefined in extractAndInjectParams');
-      return safeParams;
+      return { params: safeParams, missingResourceParams, missingToolsParams, resourceParams };
     }
 
     // Inject temporal details with type validation
+    // When there's a comparison with 2+ temporal details, skip injection.
+    // The comparison stage handles baseline/target execution separately,
+    // and injecting both into the same param would cause the last value to win.
     const temporalDetails = signals.temporalDetails || [];
-    if (temporalDetails.length > 0) {
+    const isComparisonWithMultipleTemporals =
+      signals.comparison?.isComparison && temporalDetails.length >= 2;
+
+    if (temporalDetails.length > 0 && !isComparisonWithMultipleTemporals) {
       try {
         // Validate and initialize attributes
         if (!input.attributes) {
@@ -872,66 +1368,49 @@ export class PipelineCore {
       // Continue without entity injection
     }
 
-    // Extract params for tools
-    const toolTasks = safePlan.tasks.filter(t => t.resource === 'tool');
-    if (toolTasks.length > 0) {
-      const toolSlugs = toolTasks.map(t => t.key);
-
+    // ============================================================
+    // PARAM RESOLUTION - unified tool/skill approach
+    // ============================================================
+    const paramTasks = safePlan.tasks.filter(t => t.resource === 'tool' || t.resource === 'skill');
+    if (paramTasks.length > 0) {
       try {
-        // Use paramExtractorService with proper tool params
-        const { paramExtractorService } = await import('../paramExtractor.service');
-        const { paramHydratorService } = await import('../param-hydrator.service');
-        const { toolService } = await import('../tools.service');
+        const { paramResolutionService } = await import('../param-resolution.service');
 
-        // Get tool definitions to know what params to extract
-        const allTools = await toolService.getToolsBySlugs(toolSlugs);
-        
-        // Validate tools were found
-        if (!allTools || allTools.length === 0) {
-          appLogger.warn('[PipelineCore] No tools found for extraction', {
-            toolSlugs
-          });
-          return safeParams;
-        }
+        appLogger.debug('[PipelineCore] Resolving params', {
+          resourceTasks: paramTasks.map(t => ({ resource: t.resource, key: t.key })),
+          hasDecomposition: !!decompositionResult
+        });
 
-        const allParams: ToolParam[] = [];
-        for (const tool of allTools) {
-          const toolParams = toolService.getToolParams(tool);
-          allParams.push(...toolParams);
-        }
-
-        // Validate params before extraction
-        if (!allParams || allParams.length === 0) {
-          appLogger.warn('[PipelineCore] No parameters found for tools', {
-            toolSlugs
-          });
-          return safeParams;
-        }
-
-        // Extract params with knowledge of what params are needed
-        const extractionResult = await paramExtractorService.extractAll(
-          enrichedUserQuery,
-          allParams
+        // Resolve params from all sources
+        const resolutionResult = await paramResolutionService.resolve(
+          input,
+          safePlan,
+          decompositionResult
         );
 
-        // Validate extraction result
-        if (extractionResult && extractionResult.params) {
-          safeParams = paramHydratorService.hydrate(
-            extractionResult.params,
-            input.attributes ?? {}
-          );
-        }
-      } catch (extractionError) {
-        appLogger.error('[PipelineCore] Param extraction failed', {
-          error: extractionError instanceof Error ? extractionError.message : 'Unknown error',
-          toolSlugs
+        // Use resolved params
+        safeParams = resolutionResult.availableParams;
+        missingResourceParams = resolutionResult.missingResourceParams || [];
+        missingToolsParams = resolutionResult.missingToolsParams || [];
+        resourceParams = resolutionResult.resourceParams || [];
+
+        appLogger.info('[PipelineCore] Param resolution completed', {
+          totalParams: Object.keys(safeParams).length,
+          missingResourceCount: missingResourceParams.length,
+          missingToolCount: missingToolsParams.length,
+          sources: resolutionResult.sources
         });
-        // Return empty params on error
-        return {};
+
+      } catch (resolutionError) {
+        appLogger.error('[PipelineCore] Param resolution failed', {
+          error: resolutionError instanceof Error ? resolutionError.message : 'Unknown error',
+          resourceTasks: paramTasks.map(t => ({ resource: t.resource, key: t.key }))
+        });
+        // Continue with existing safeParams on error
       }
     }
 
-    return safeParams;
+    return { params: safeParams, missingResourceParams, missingToolsParams, resourceParams };
   }
 
   // ============================================================
@@ -941,43 +1420,86 @@ export class PipelineCore {
   private async checkMissingParams(
     input: PipelineInput,
     agent: Agent,
-    safePlan: PlannerOutput,
-    safeParams: Record<string, unknown>
+    paramExtraction: ParamExtractionResult
   ): Promise<{
     hasMissing: boolean;
     missingParams?: ToolMissingParams[];
+    missingResourceParams?: ResourceMissingParams[];
     question?: string;
   }> {
-    const toolTasks = safePlan.tasks.filter(t => t.resource === 'tool');
-    if (toolTasks.length === 0) {
+    const missingResourceParams = paramExtraction.missingResourceParams || [];
+    const missingToolsParams = paramExtraction.missingToolsParams || [];
+
+    // Filter: only flag truly required params (no defaultValue available)
+    const trulyMissing = missingResourceParams
+      .map(item => {
+        const requiredMissing = (item.params || []).filter(p => {
+          // If param has a defaultValue, it's auto-resolvable — don't block
+          if (p.defaultValue !== undefined && p.defaultValue !== null && p.defaultValue !== '') return false;
+          // If param is not required, skip it
+          if (p.isRequired === false) return false;
+          return true;
+        });
+
+        if (requiredMissing.length === 0) return null;
+
+        return {
+          ...item,
+          missing: requiredMissing.map(p => p.name),
+          params: requiredMissing
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
+    // Also check tool missing params (these were previously ignored!)
+    const trulyMissingTools = missingToolsParams
+      .filter(toolMissing => {
+        if (!toolMissing.tool?.parameters) return true; // No param detail → assume truly missing
+        const toolParams = toolMissing.tool.parameters || [];
+        return toolMissing.missing.some(paramName => {
+          const param = toolParams.find(p => p.name === paramName);
+          if (!param) return true; // Param not found in definition → assume required
+          if (param.defaultValue !== undefined && param.defaultValue !== null && param.defaultValue !== '') return false;
+          if (param.isRequired === false) return false;
+          return true;
+        });
+      });
+
+    if (trulyMissing.length === 0 && trulyMissingTools.length === 0) {
       return { hasMissing: false };
     }
 
-    const toolSlugs = toolTasks.map(t => t.key);
-    const { toolService } = await import('../tools.service');
-    const { clarificationService } = await import('../clarification.service');
+      const automationMissing = trulyMissing.find(item =>
+        item.resource === 'skill' && item.key === 'automation_manager'
+      );
+      if (automationMissing) {
+        const { automationClarificationService } = await import('../automation/automation-clarification.service');
+        return {
+          hasMissing: true,
+          missingParams: trulyMissingTools.length > 0 ? trulyMissingTools : missingToolsParams,
+          missingResourceParams: trulyMissing,
+          question: automationClarificationService.buildQuestion(
+            [...new Set(trulyMissing.flatMap(item => item.missing))],
+            paramExtraction.params
+          )
+        };
+      }
 
-    const allTools = await toolService.getToolsBySlugs(toolSlugs);
-    const missingToolsParams = await toolService.getMissingParamsForTools(
-      allTools,
-      safeParams
-    );
+      const { clarificationService } = await import('../clarification.service');
 
-    if (missingToolsParams.length === 0) {
-      return { hasMissing: false };
-    }
-
-    // Generate clarification question
-    const question = await clarificationService.askForMultipleParametersFromTools(
-      agent,
-      input,
-      missingToolsParams,
-      'Indonesia'
-    );
+      const question = trulyMissing.length > 0
+        ? await clarificationService.askForMultipleParametersFromResources(
+            agent,
+            input,
+            trulyMissing,
+            'Indonesia'
+          )
+        : `Mohon lengkapi parameter berikut: ${trulyMissingTools.flatMap(t => t.missing).join(', ')}`;
 
     return {
       hasMissing: true,
-      missingParams: missingToolsParams,
+      missingParams: trulyMissingTools.length > 0 ? trulyMissingTools : missingToolsParams,
+      missingResourceParams: trulyMissing,
       question
     };
   }
@@ -985,6 +1507,26 @@ export class PipelineCore {
   // ============================================================
   // Utilities
   // ============================================================
+
+  private buildReplayParams(
+    input: PipelineInput,
+    memoryItem: {
+      flowTrace?: Array<{ params?: Record<string, unknown> | null }> | null
+    }
+  ): Record<string, unknown> {
+    const params: Record<string, unknown> = {
+      ...((input.attributes?.params || {}) as Record<string, unknown>)
+    };
+
+    for (const trace of memoryItem.flowTrace || []) {
+      if (!trace?.params || typeof trace.params !== 'object' || Array.isArray(trace.params)) {
+        continue;
+      }
+      Object.assign(params, trace.params);
+    }
+
+    return params;
+  }
 
   private normalizeSignals(signals: UserMessageSignals): {
     actionHints: string[];
@@ -1008,5 +1550,21 @@ export class PipelineCore {
       isQuestion: (signals as any).isQuestion || false,
       language: signals.language || 'id'
     };
+  }
+
+  private isTemporalOnlyFollowUp(text: string, signals: UserMessageSignals): boolean {
+    if (!signals.temporalDetails?.length) return false;
+
+    const normalized = String(text || '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) return false;
+
+    const residue = buildTemporalFollowUpResidue(normalized);
+
+    return residue.length === 0;
   }
 }

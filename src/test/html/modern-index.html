@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AI Chat Assistant - Powered by VIPER">
+  <meta name="theme-color" content="#10a37f">
+  <title>AI Chat Assistant</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="assets/css/modern-style.css">
+  <link rel="stylesheet" href="assets/css/connection-status.css">
+</head>
+<body>
+  <div id="app" class="chat-container">
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Header -->
+      <header class="chat-header">
+        <div class="header-title">
+          <h1>AI Assistant</h1>
+          <span class="model-badge">VIPER</span>
+        </div>
+        <div class="header-actions">
+          <div class="connection-status-wrapper">
+            <span class="connection-status-indicator"></span>
+            <span id="connectionStatusText" class="connection-status-text">Connecting...</span>
+          </div>
+          <button class="header-btn" id="clearChat" title="Clear chat">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Messages Container -->
+      <div class="messages-container" id="messages">
+        <!-- Welcome Message -->
+        <div class="welcome-message">
+          <div class="welcome-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1v-1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2z"/>
+              <path d="M9 12a3 3 0 116 0 3 3 0 01-6 0z"/>
+            </svg>
+          </div>
+          <h2>Welcome to AI Chat Assistant</h2>
+          <p>How can I help you today?</p>
+          <div class="suggestion-grid">
+            <button class="suggestion-btn" data-prompt="Explain quantum computing in simple terms">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+                <path d="M12 17h.01"/>
+              </svg>
+              Explain quantum computing
+            </button>
+            <button class="suggestion-btn" data-prompt="Help me write a professional email">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <path d="M22 6l-10 7L2 6"/>
+              </svg>
+              Write a professional email
+            </button>
+            <button class="suggestion-btn" data-prompt="What's the weather like today?">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+                <circle cx="12" cy="12" r="5"/>
+              </svg>
+              Check the weather
+            </button>
+            <button class="suggestion-btn" data-prompt="Help me create a workout plan">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6.5 6.5l11 11M21 21l-1-1M3 3l1 1M18 22l4-4M2 6l4-4 4 4M14 6l4-4 4 4M2 18l4-4 4 4M14 18l4-4 4 4"/>
+              </svg>
+              Create a workout plan
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- God Mode Separator (injected between messages) -->
+      <template id="godModeSeparatorTemplate">
+        <div class="god-mode-separator">
+          <div class="god-mode-content">
+            <div class="god-mode-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <span class="god-mode-text">Entry God Mode</span>
+            <button class="god-mode-exit-btn" title="Exit God Mode">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <!-- Typing Indicator -->
+      <div id="typingIndicator" class="typing-indicator hidden">
+        <div class="typing-dots">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <span>AI is thinking...</span>
+      </div>
+
+      <!-- Input Area -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea
+            id="messageInput"
+            class="message-input"
+            placeholder="Ask anything... (Shift + Enter for new line)"
+            maxlength="2000"
+            rows="1"
+          ></textarea>
+          <div class="input-actions">
+            <button id="sendBtn" class="send-btn" title="Send message (Ctrl/Cmd + Enter)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="input-footer">
+          <div class="input-info">
+            <span class="char-count"><span id="charCount">0</span><span class="char-limit">/2000</span></span>
+            <span class="input-hint">Press Shift+Enter for new line</span>
+          </div>
+          <span class="disclaimer">AI may make mistakes. Verify important information.</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- JavaScript -->
+  <script type="module">
+    import { CONFIG } from './assets/js/config.js';
+    import { storageManager } from './assets/js/storage-manager.js';
+    import { messageHandler } from './assets/js/message-handler.js';
+    import { uiManager } from './assets/js/ui-manager.js';
+    import { apiClient } from './assets/js/api-client.js';
+    import { typingIndicator } from './assets/js/typing-indicator.js';
+    import { wsClient, CONNECTION_STATUS } from './assets/js/ws-client.js';
+    import chatApp from './assets/js/app.js';
+    
+    // Initialize WebSocket if enabled
+    if (CONFIG.ENABLE_WEBSOCKET) {
+      console.log('[Init] WebSocket enabled');
+      
+      // Setup WebSocket callbacks
+      wsClient.onStatusChange((status) => {
+        const statusText = document.getElementById('connectionStatusText');
+        const statusIndicator = document.querySelector('.connection-status-indicator');
+        
+        if (statusText && statusIndicator) {
+          statusText.textContent = status;
+          statusIndicator.parentElement.className = `connection-status-wrapper connection-status ${status}`;
+        }
+      });
+      
+      wsClient.onMessage((message) => {
+        console.log('[Init:wsClient.onMessage] Message received:', {
+          type: message.type,
+          intent: message.intent,
+          isResponse: message.type === 'response',
+          isReminder: message.type === 'reminder' || message.event === 'reminder',
+          hasHandler: !!chatApp.handleWSResponse,
+          timestamp: new Date().toISOString()
+        });
+
+        // ✅ Handle Reminder events (ONLY sound alert, NOT message bubble)
+        if (message.type === 'reminder' || message.event === 'reminder') {
+          console.log('[Init:wsClient.onMessage] Reminder event received (sound only):', message);
+          
+          // ✅ Play sound alert ONLY (don't render message)
+          playAlarmSound();
+          
+          // Mark that we received a reminder (for potential UI indicator)
+          console.log('[Reminder] Alarm sound played');
+          
+          // Don't return - let response event handle the message display
+        }
+
+        // Handle chat response (this will display the message bubble)
+        if (message.type === 'response') {
+          if (chatApp.handleWSResponse) {
+            console.log('[Init:wsClient.onMessage] Calling chatApp.handleWSResponse');
+            chatApp.handleWSResponse(message);
+          } else {
+            console.warn('[Init:wsClient.onMessage] chatApp.handleWSResponse not available');
+          }
+        }
+
+        // Handle God Mode change events (with sound)
+        else if (message.type === 'notification' && message.event === 'mode_change') {
+          console.log('[Init:wsClient.onMessage] Mode change event received:', message);
+          
+          // ✅ Play god mode sound
+          playGodModeSound(message.mode);
+          
+          if (chatApp.handleModeChange) {
+            chatApp.handleModeChange(message);
+          }
+        }
+      });
+
+      // ✅ Alarm sound alert function (repeating beeps)
+      function playAlarmSound() {
+        // Create audio context for browser-compatible sound
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Create alarm sound with repeating beeps
+        const beepCount = 3;
+        const beepDuration = 0.2;
+        const beepInterval = 0.3;
+
+        for (let i = 0; i < beepCount; i++) {
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+
+          // Set frequency for alarm beep (high-pitched)
+          oscillator.type = 'square';
+          oscillator.frequency.setValueAtTime(880, audioContext.currentTime + (i * beepInterval)); // A5
+
+          // Set volume envelope (sharp attack, quick decay)
+          gainNode.gain.setValueAtTime(0.2, audioContext.currentTime + (i * beepInterval));
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + (i * beepInterval) + beepDuration);
+
+          // Play beep
+          oscillator.start(audioContext.currentTime + (i * beepInterval));
+          oscillator.stop(audioContext.currentTime + (i * beepInterval) + beepDuration);
+        }
+
+        console.log('[Sound] Alarm sound played (3 beeps)');
+      }
+
+      // ✅ God Mode sound effect (power-up/power-down)
+      function playGodModeSound(mode) {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        if (mode === 'god-mode') {
+          // ✅ Power-up sound (ascending tones)
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          oscillator.type = 'sine';
+          oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // A4
+          oscillator.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.3); // A5
+          
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+          
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.5);
+          
+          console.log('[Sound] God mode activated sound played');
+        } else if (mode === 'chat-mode') {
+          // ✅ Power-down sound (descending tones)
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          oscillator.type = 'sine';
+          oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A5
+          oscillator.frequency.exponentialRampToValueAtTime(440, audioContext.currentTime + 0.3); // A4
+          
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+          
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.5);
+          
+          console.log('[Sound] God mode deactivated sound played');
+        }
+      }
+
+      // Connect
+      wsClient.connect();
+    } else {
+      console.log('[Init] WebSocket disabled, using HTTP only');
+    }
+    
+    // App is auto-initialized in app.js
+  </script>
+</body>
+</html>

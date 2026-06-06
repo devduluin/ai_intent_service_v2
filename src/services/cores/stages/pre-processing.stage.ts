@@ -62,7 +62,8 @@ export class PreProcessingStage {
           asksForFile: decomposition.signals.asksForFile,
           asksForRealtimeData: decomposition.signals.asksForRealtimeData,
           isQuestion: decomposition.signals.isQuestion,
-          language: decomposition.signals.language
+          language: decomposition.signals.language,
+          comparison: decomposition.signals.comparison
         }
       };
 

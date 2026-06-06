@@ -15,6 +15,7 @@ import type { TemporalDetailWithDates } from '../injectors/temporal.injector';
 import { appLogger } from '../../../utils/logger.util';
 import { withTimeout } from '../../../utils/async-helpers.util';
 import { intentRegistry } from '../../intent-registry.service';
+import { config } from '../../../config';
 
 const DEFAULT_TIMEOUT = 15000;
 
@@ -318,7 +319,7 @@ export class SlotFillingResolver {
       })),
       collectedParams,
       lastUserMessage: input.text,
-      maxRetry: 3,
+      maxRetry: config.slotFilling.maxRetry,
       isMultiIntent: intents.length > 1,
       originalPlan: {
         mode: originalPlan.mode || 'single_step',
@@ -354,7 +355,7 @@ export class SlotFillingResolver {
         intentSlugs,
         collectedParams,
         lastUserMessage: input.text,
-        maxRetry: 3,
+        maxRetry: config.slotFilling.maxRetry,
         currentRetry: 0,
         originalPlan
       }

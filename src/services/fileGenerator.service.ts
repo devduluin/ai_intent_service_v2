@@ -5,6 +5,11 @@ import ExcelJS from 'exceljs';
 import { PipelineInput } from "../types";
 import { storageHelper } from '../utils/storage-helper.util';
 import { appLogger } from '../utils/logger.util';
+import { 
+  getStyle, 
+  autoWidthColumns,
+  type XlsStyle 
+} from '../utils/dynamic-style-xls.util';
 
 // ============================================================
 // Types
@@ -20,6 +25,7 @@ export interface FileGenerationRequest {
   sheetTitle?: string;
   headerColor?: string;
   titleColor?: string;
+  defaultStyle?: string | 'random';  // ✅ NEW: Dynamic style support
   sheets?: Array<{
     sheetName: string;
     data: unknown;
@@ -548,6 +554,7 @@ ${userQuery}
       sheetTitle,
       headerColor,
       titleColor,
+      defaultStyle = 'blue',  // ✅ NEW: Default to blue style
       sheets
     } = options;
 
@@ -557,7 +564,10 @@ ${userQuery}
         return this.generateCsvFileDirect({ ...options, savePath });
       }
 
-      // XLSX format - use ExcelJS with styling
+      // ✅ Get dynamic style (random or specific)
+      const xlsStyle = getStyle(defaultStyle);
+
+      // XLSX format - use ExcelJS with dynamic styling
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'AI Intent API';
       workbook.created = new Date();
@@ -577,15 +587,11 @@ ${userQuery}
           const sheetConfig = sheets[index];
           const excelStructure = await this.formatterXls(sheetConfig.data, contextInfo);
 
-          await this.createExcelJSSheet(
+          await this.createExcelJSSheetWithDynamicStyle(
             workbook,
             excelStructure,
             sheetConfig.sheetTitle || sheetConfig.sheetName,
-            {
-              ...DEFAULT_STYLE,
-              headerColor: this.normalizeArgbColor(sheetConfig.headerColor || headerColor, DEFAULT_STYLE.headerColor),
-              titleColor: this.normalizeArgbColor(sheetConfig.titleColor || titleColor, DEFAULT_STYLE.titleColor)
-            },
+            xlsStyle,  // ✅ Use dynamic style
             enableStyling,
             this.ensureUniqueSheetName(sheetConfig.sheetName || `Sheet${index + 1}`, workbook)
           );
@@ -597,18 +603,14 @@ ${userQuery}
       } else {
         // Single sheet mode
         const excelStructure = await this.formatterXls(data, contextInfo);
-        
+
         const finalTitle = sheetTitle || excelStructure.sheetTitle || 'Report';
-        
-        await this.createExcelJSSheet(
+
+        await this.createExcelJSSheetWithDynamicStyle(
           workbook,
           excelStructure,
           finalTitle,
-          {
-            ...DEFAULT_STYLE,
-            headerColor: this.normalizeArgbColor(headerColor, DEFAULT_STYLE.headerColor),
-            titleColor: this.normalizeArgbColor(titleColor, DEFAULT_STYLE.titleColor)
-          },
+          xlsStyle,  // ✅ Use dynamic style
           enableStyling,
           this.sanitizeSheetName(sheetName)
         );
@@ -838,6 +840,102 @@ ${userQuery}
       temp = Math.floor(temp / 26);
     }
     return letter;
+  }
+
+  // ============================================================
+  // CREATE EXCELJS WORKSHEET WITH DYNAMIC STYLE (NEW)
+  // ============================================================
+  private async createExcelJSSheetWithDynamicStyle(
+    workbook: ExcelJS.Workbook,
+    excelStructure: { headers: string[]; rows: any[][]; columns: ExcelColumn[] },
+    title: string,
+    xlsStyle: XlsStyle,  // ✅ Use dynamic style
+    enableStyling: boolean,
+    sheetName: string
+  ): Promise<ExcelJS.Worksheet> {
+    const worksheet = workbook.addWorksheet(this.sanitizeSheetName(sheetName));
+
+    const hasTitle = title && title.trim().length > 0;
+    const titleRowOffset = hasTitle ? 1 : 0;
+    const normalizedColumns = excelStructure.columns.length > 0
+      ? excelStructure.columns
+      : [{ header: 'Value', field: 'value', width: 50, type: 'text' as const }];
+    const normalizedHeaders = excelStructure.headers.length > 0
+      ? excelStructure.headers
+      : normalizedColumns.map(column => column.header);
+    const colCount = normalizedColumns.length;
+
+    // Set column widths
+    worksheet.columns = normalizedColumns.map(col => ({
+      key: col.field,
+      header: col.header,
+      width: col.width || 15,
+      numFmt: col.type === 'date' ? 'yyyy-mm-dd' : col.type === 'number' ? '#,##0' : undefined
+    }));
+
+    // Add title row if exists
+    if (hasTitle && enableStyling) {
+      worksheet.mergeCells(`A1:${this.getColumnLetter(colCount)}1`);
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = title;
+      titleCell.font = xlsStyle.header.font;
+      titleCell.fill = xlsStyle.header.fill;
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      titleCell.border = this.createExcelJSBorder();
+    }
+
+    // Add header row
+    const headerRowNum = titleRowOffset + 1;
+    const headerRow = worksheet.getRow(headerRowNum);
+
+    // ✅ Set header values and styling PER CELL (not per row to avoid overflow)
+    normalizedHeaders.forEach((header, index) => {
+      const cell = headerRow.getCell(index + 1);
+      cell.value = header;
+
+      if (enableStyling) {
+        cell.font = xlsStyle.header.font;
+        cell.fill = xlsStyle.header.fill;
+        cell.alignment = xlsStyle.header.alignment;
+        cell.border = this.createExcelJSBorder();
+      }
+    });
+
+    // Add data rows with alternating colors
+    excelStructure.rows.forEach((row, index) => {
+      const rowNum = headerRowNum + index + 1;
+      const worksheetRow = worksheet.getRow(rowNum);
+
+      // Set values and styling per cell
+      row.forEach((cellValue, colIndex) => {
+        const cell = worksheetRow.getCell(colIndex + 1);
+        cell.value = cellValue;
+
+        if (enableStyling) {
+          // Apply font
+          if (xlsStyle.row.font) {
+            cell.font = xlsStyle.row.font;
+          }
+
+          // Alternating row colors - per cell
+          if (xlsStyle.alternatingRow && index % 2 === 0) {
+            cell.fill = xlsStyle.alternatingRow.fill;
+          }
+        }
+      });
+
+      // Row height
+      if (enableStyling) {
+        worksheetRow.height = 20;
+      }
+    });
+
+    // Auto-width columns
+    if (enableStyling) {
+      autoWidthColumns(worksheet);
+    }
+
+    return worksheet;
   }
 
   // ============================================================

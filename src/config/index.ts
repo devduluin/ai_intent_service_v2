@@ -60,6 +60,10 @@ export const config = {
     clarifyThreshold:   parseFloat(process.env.INTENT_CLARIFY_THRESHOLD   ?? '0.55'),
   },
 
+  slotFilling: {
+    maxRetry: parseInt(process.env.SLOT_FILLING_MAX_RETRY ?? '2'),
+  },
+
   externalApis: {
     weather: {
       key: process.env.WEATHER_API_KEY ?? '',
@@ -97,6 +101,10 @@ export const config = {
 
   storage: {
     uploadDir: process.env.UPLOAD_DIR ?? './uploads',
+  },
+
+  memory: {
+    maxRowMemoryPerUser: parseInt(process.env.MAX_SLOTS_PER_USER ?? '25'),
   },
 
 } as const

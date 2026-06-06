@@ -3,9 +3,10 @@ import { episodicMemoryRepository } from '../repositories/episodic-memory.reposi
 import { globalCache } from '../utils/cache-helper.util';
 import { openAiService as alibabaService } from './openAi.service';
 import type { ChatMessage } from '../types';
-import type { PlannerOutput } from '../types/planner.types';
+import type { PlannerOutput, RecentUsageHints } from '../types/planner.types';  // ✅ ADDED RecentUsageHints
 import type { Agent } from '../types/agent.types';
 import type { EpisodicMemory } from '../types/episodic-memory.types';
+import type { EpisodicMemoryWriteContext } from '../types/episodic-memory-write.types';
 import { config } from '../config';
 import { trimChatHistory } from '../utils/trim-chat';
 import { appLogger } from '../utils/logger.util';
@@ -14,10 +15,14 @@ import { appLogger } from '../utils/logger.util';
 // Constants
 // ============================================================
 
-const MAX_SLOTS_PER_USER = 6; // Daily limit per user
+const MAX_SLOTS_PER_USER = config.memory.maxRowMemoryPerUser; // ✅ Use config (25) instead of hardcoded 6
 const CACHE_PREFIX = 'episodic_memory:';
-const CONTEXT_CACHE_TTL = 300; // 5 minutes
-const LAST_CONTEXT_CACHE_TTL = 600; // 10 minutes
+const CONTEXT_CACHE_TTL = 60 * 30; // 1800 sec
+const LAST_CONTEXT_CACHE_TTL = 60 * 60; // 3600 sec
+const MAX_MENU_CACHE_SIZE = 100; // Limit menu cache size
+const MENU_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const MAX_RETRIES = 3; // For summarization retries
+const RETRY_DELAY_MS = 1000; // Base delay for retries
 
 type MenuMemory = {
   user_id: string;
@@ -33,6 +38,7 @@ type MenuMemory = {
 class EpisodicMemoryService {
   // In-memory cache for menu (lightweight, no DB needed)
   private lastMenuDb: MenuMemory[] = [];
+  private pendingRequests = new Map<string, Promise<string>>();
 
   constructor() {
     appLogger.info('EpisodicMemoryService initialized', {
@@ -45,6 +51,9 @@ class EpisodicMemoryService {
   // 1️⃣ SAVE MENU (AI show numbered menu)
   // ============================================================
   saveMenu(userId: string, app: string, menu: string[]): void {
+    // Clean up expired entries first
+    this.cleanupExpiredMenus();
+    
     // Remove existing menu for this user+app
     this.lastMenuDb = this.lastMenuDb.filter(
       (m) => !(m.user_id === userId && m.app_name === app)
@@ -65,6 +74,26 @@ class EpisodicMemoryService {
     });
   }
 
+  // Cleanup expired menu entries
+  private cleanupExpiredMenus(): void {
+    const now = Date.now();
+    const initialSize = this.lastMenuDb.length;
+    
+    this.lastMenuDb = this.lastMenuDb.filter(menu => 
+      now - menu.created_at.getTime() < MENU_CACHE_TTL_MS
+    );
+    
+    // Limit array size to prevent memory leaks
+    if (this.lastMenuDb.length > MAX_MENU_CACHE_SIZE) {
+      this.lastMenuDb = this.lastMenuDb.slice(-MAX_MENU_CACHE_SIZE);
+    }
+    
+    const cleanedCount = initialSize - this.lastMenuDb.length;
+    if (cleanedCount > 0) {
+      appLogger.debug('Menu cache cleaned', { cleanedCount, remainingSize: this.lastMenuDb.length });
+    }
+  }
+
   // ============================================================
   // 2️⃣ DETECT MENU SELECTION ("1" → rewrite intent)
   // ============================================================
@@ -75,6 +104,9 @@ class EpisodicMemoryService {
     if (!/^[1-9]$/.test(clean)) {
       return text;
     }
+
+    // Clean up expired entries on access
+    this.cleanupExpiredMenus();
 
     const lastMenu = this.lastMenuDb.find(
       (m) => m.user_id === userId && m.app_name === app
@@ -112,7 +144,8 @@ class EpisodicMemoryService {
     userId: string,
     app: string,
     summary: string,
-    toolsUsed?: PlannerOutput
+    toolsUsed?: PlannerOutput,
+    writeContext?: Partial<EpisodicMemoryWriteContext>
   ): Promise<EpisodicMemory> {
     if (!intent) {
       throw new Error('Intent not found');
@@ -131,7 +164,13 @@ class EpisodicMemoryService {
       const memory = await episodicMemoryRepository.upsert(userId, app, intentKey, {
         level: 'daily',
         summary,
-        toolsUsed: toolsUsed || null,
+        toolsUsed: writeContext?.taskPlan || toolsUsed || null,
+        topicKey: writeContext?.topicKey || intentKey,
+        topicLabel: writeContext?.topicLabel || null,
+        flowStage: writeContext?.flowStage || null,
+        taskPlan: writeContext?.taskPlan || toolsUsed || null,
+        flowTrace: writeContext?.flowTrace || null,
+        memoryMeta: writeContext?.memoryMeta || null,
       });
 
       // Enforce slot limit
@@ -193,7 +232,7 @@ class EpisodicMemoryService {
   }
 
   // ============================================================
-  // 5️⃣ SUMMARIZE CONVERSATION → STORE MEMORY
+  // 5️⃣ SUMMARIZE CONVERSATION → STORE MEMORY (with retry logic)
   // ============================================================
   async summarize(
     agent: Agent,
@@ -205,39 +244,31 @@ class EpisodicMemoryService {
   ): Promise<string | null> {
     // Validate input
     if (!chatHistory || chatHistory.length < 2) {
-      appLogger.debug('Skipping summary: insufficient chat history', {
-        userId,
-        appName: app,
-        historyLength: chatHistory?.length || 0
-      });
       return null;
     }
 
     const provider = agent.llmModel?.provider || config.default?.provider || 'ollama';
     const llmModel = agent.llmModel?.modelCode || config.ollama?.llmModel;
 
-    appLogger.debug('Summarizing conversation', {
-      userId,
-      appName: app,
-      provider,
-      llmModel
-    });
+    // Retry logic for summarization
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        // Trim chat history for efficiency
+        const trimmedHistory = trimChatHistory(chatHistory, {
+          maxMessages: 2,
+          maxLength: 512,
+        });
 
-    try {
-      // Trim chat history for efficiency
-      const trimmedHistory = trimChatHistory(chatHistory, {
-        maxMessages: 2,
-        maxLength: 200,
-      });
+        const conversationText = trimmedHistory
+          .map((m) => `${m.role}: ${m.content}`)
+          .join('\n');
 
-      const conversationText = trimmedHistory
-        .map((m) => `${m.role}: ${m.content}`)
-        .join('\n');
-
-      const prompt = `
+        const prompt = `
 ROLE: AI Memory Assistant.
 
-Ringkas percakapan berikut menjadi 2 kalimat singkat (max 100 kata).
+Ringkas percakapan berikut menjadi kalimat singkat.
 Fokus pada:
 - tujuan user
 - info penting user
@@ -248,31 +279,119 @@ ${conversationText}
 
 Ringkasan:`.trim();
 
-      const summary = (
-        await alibabaService.chat(provider, llmModel, prompt)
-      ).trim();
+        const summary = (
+          await alibabaService.chat(provider, llmModel, prompt)
+        ).trim();
 
-      appLogger.debug('Summary generated', {
-        summaryLength: summary.length,
-        summary: summary.substring(0, 100)
-      });
+        // Store memory
+        await this.upsertMemory(
+          this.normalizeLegacyIntent(intent),
+          provider,
+          llmModel,
+          userId,
+          app,
+          summary,
+          planSeen,
+          {
+            topicKey: this.normalizeLegacyIntent(intent),
+            flowStage: this.inferLegacyFlowStage(intent),
+            taskPlan: planSeen || null
+          }
+        );
 
-      // Store memory
-      await this.upsertMemory(intent, provider, llmModel, userId, app, summary, planSeen);
+        if (attempt > 1) {
+          appLogger.info('Summarization succeeded after retry', { attempt, userId, appName: app });
+        }
 
-      return summary;
-    } catch (error) {
-      appLogger.error('Summarization failed', {
-        error: error instanceof Error ? error.message : error,
-        userId,
-        appName: app
-      });
+        return summary;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        
+        if (attempt < MAX_RETRIES) {
+          const delayMs = RETRY_DELAY_MS * attempt;
+          appLogger.warn(`Summarization attempt ${attempt} failed, retrying in ${delayMs}ms`, {
+            error: lastError.message,
+            userId,
+            appName: app
+          });
+          await this.delay(delayMs);
+        }
+      }
+    }
+
+    // All retries failed
+    appLogger.error('Summarization failed after all retries', {
+      error: lastError?.message,
+      userId,
+      appName: app
+    });
+    return null;
+  }
+
+  async summarizeWithContext(input: {
+    agent: Agent;
+    userId: string;
+    appName: string;
+    messages: ChatMessage[];
+    writeContext: EpisodicMemoryWriteContext;
+  }): Promise<string | null> {
+    const summary = await this.summarize(
+      input.agent,
+      input.writeContext.topicKey,
+      input.userId,
+      input.appName,
+      input.messages,
+      input.writeContext.taskPlan || undefined
+    );
+
+    if (!summary) {
       return null;
     }
+
+    // summarize() already wrote a normalized row. Re-upsert metadata because the
+    // legacy wrapper cannot receive the full context without changing callers.
+    await this.upsertMemory(
+      input.writeContext.topicKey,
+      input.agent.llmModel?.provider || config.default?.provider || 'ollama',
+      input.agent.llmModel?.modelCode || config.ollama?.llmModel,
+      input.userId,
+      input.appName,
+      summary,
+      input.writeContext.taskPlan || undefined,
+      input.writeContext
+    );
+
+    return summary;
+  }
+
+  private normalizeLegacyIntent(intent: string | null): string {
+    if (!intent) return 'general_chat';
+    if (intent.startsWith('offer:')) return 'internal_flow:offer';
+    if (intent.startsWith('continuation:')) return 'internal_flow:continuation';
+    if (['slot_filling', 'continuation_fallback', 'continuation_error', 'error'].includes(intent)) {
+      return `internal_flow:${intent}`;
+    }
+    return intent;
+  }
+
+  private inferLegacyFlowStage(intent: string | null): EpisodicMemoryWriteContext['flowStage'] {
+    if (!intent) return 'general_chat';
+    if (intent.startsWith('offer:')) return 'offer_accepted';
+    if (intent.startsWith('continuation:')) return 'continuation';
+    if (intent === 'comparison') return 'comparison';
+    if (intent === 'slot_filling') return 'slot_filling';
+    if (intent === 'error') return 'error';
+    if (intent === 'general_chat') return 'general_chat';
+    return 'main_pipeline';
+  }
+
+  // Helper method for delay
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // ============================================================
-  // 6️⃣ GET RECENT CONTEXT (Redis Cache + DB Fallback)
+  // 6️⃣ GET RECENT CONTEXT (Redis Cache + DB Fallback + Deduplication)
   // ============================================================
   async getRecentContext(
     userId: string,
@@ -280,7 +399,32 @@ Ringkasan:`.trim();
     limit = 5
   ): Promise<string> {
     const cacheKey = `${CACHE_PREFIX}context:${userId}:${app}`;
+    const dedupKey = `${userId}:${app}:${limit}`;
 
+    // Check for pending request to prevent duplicate DB calls
+    if (this.pendingRequests.has(dedupKey)) {
+      appLogger.debug('Reusing pending context request', { userId, appName: app });
+      return this.pendingRequests.get(dedupKey)!;
+    }
+
+    const promise = this.fetchRecentContextWithCache(cacheKey, userId, app, limit);
+    this.pendingRequests.set(dedupKey, promise);
+
+    try {
+      const result = await promise;
+      return result;
+    } finally {
+      // Clean up pending request after completion
+      this.pendingRequests.delete(dedupKey);
+    }
+  }
+
+  private async fetchRecentContextWithCache(
+    cacheKey: string,
+    userId: string,
+    app: string,
+    limit: number
+  ): Promise<string> {
     try {
       // Try Redis cache first
       const cached = await globalCache.get<string>(cacheKey);
@@ -306,6 +450,8 @@ Ringkasan:`.trim();
       );
 
       if (summaries.length === 0) {
+        // Cache empty result briefly to prevent DB hammering
+        await globalCache.set(cacheKey, '', { ttl: 60 }); // Cache empty for 1 minute
         return '';
       }
 
@@ -319,7 +465,7 @@ Pesan saat ini:
 
       // Cache the result
       await globalCache.set(cacheKey, context, {
-        ttl: CONTEXT_CACHE_TTL * 1000,
+        ttl: CONTEXT_CACHE_TTL,
       });
 
       appLogger.debug('Context cached', {
@@ -371,14 +517,14 @@ Pesan saat ini:
       );
 
       if (!lastMemory) {
+        // Cache null result briefly to prevent DB hammering
+        await globalCache.set(cacheKey, null, { ttl: 60 });
         return null;
       }
 
-      // const context = lastMemory.summary
-
       // Cache the result
       await globalCache.set(cacheKey, lastMemory, {
-        ttl: LAST_CONTEXT_CACHE_TTL * 1000,
+        ttl: LAST_CONTEXT_CACHE_TTL,
       });
 
       appLogger.debug('Last context cached', {
@@ -399,19 +545,37 @@ Pesan saat ini:
   }
 
   // ============================================================
-  // 8️⃣ GET TOOL USAGE HINTS
+  // 8️⃣ GET TOOL USAGE HINTS (with caching)
   // ============================================================
   async getToolUsageHints(
     userId: string,
     app: string
-  ): Promise<PlannerOutput> {
+  ): Promise<RecentUsageHints> {  // ✅ CHANGED FROM PlannerOutput
+    const cacheKey = `${CACHE_PREFIX}tools:${userId}:${app}`;
+
     try {
+      // Try cache first
+      const cached = await globalCache.get<RecentUsageHints>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
       const merged = await episodicMemoryRepository.getAggregatedToolUsage(
         userId,
         app
       );
 
-      return merged;
+      // Convert from PlannerOutput to RecentUsageHints
+      const result: RecentUsageHints = {
+        tasks: merged.tasks || [],
+        chat: merged.chat,
+        hasDependencies: merged.tasks?.some(t => t.depends_on && t.depends_on.length > 0)
+      };
+
+      // Cache tool hints (shorter TTL since tools may change)
+      await globalCache.set(cacheKey, result, { ttl: 300 }); // 5 minutes
+
+      return result;
     } catch (error) {
       appLogger.error('Failed to get tool usage hints', {
         error: error instanceof Error ? error.message : error,
@@ -419,17 +583,17 @@ Pesan saat ini:
         appName: app
       });
 
-      // Return empty planner on error
+      // Return empty hints on error
       return {
-        mode: "single_step",
         tasks: [],
         chat: false,
+        hasDependencies: false
       };
     }
   }
 
   // ============================================================
-  // 9️⃣ CACHE INVALIDATION
+  // 9️⃣ CACHE INVALIDATION (optimized for batch delete)
   // ============================================================
   private async invalidateContextCache(
     userId: string,
@@ -438,9 +602,14 @@ Pesan saat ini:
     try {
       const contextKey = `${CACHE_PREFIX}context:${userId}:${app}`;
       const lastKey = `${CACHE_PREFIX}last:${userId}:${app}`;
+      const toolsKey = `${CACHE_PREFIX}tools:${userId}:${app}`;
 
-      await globalCache.del(contextKey);
-      await globalCache.del(lastKey);
+      // Batch delete for efficiency
+      await Promise.all([
+        globalCache.del(contextKey),
+        globalCache.del(lastKey),
+        globalCache.del(toolsKey)
+      ]);
 
       appLogger.debug('Context cache invalidated', {
         userId,
@@ -463,6 +632,11 @@ Pesan saat ini:
       // Delete from database
       await episodicMemoryRepository.deleteByUserAndApp(userId, app);
 
+      // Also clear menu cache for this user
+      this.lastMenuDb = this.lastMenuDb.filter(
+        (m) => !(m.user_id === userId && m.app_name === app)
+      );
+
       // Invalidate cache
       await this.invalidateContextCache(userId, app);
 
@@ -481,7 +655,7 @@ Pesan saat ini:
   }
 
   // ============================================================
-  // 1️⃣1️⃣ GET USER MEMORY STATS
+  // 1️⃣1️⃣ GET USER MEMORY STATS (with caching)
   // ============================================================
   async getUserMemoryStats(
     userId: string,
@@ -491,14 +665,32 @@ Pesan saat ini:
     maxSlots: number;
     usagePercentage: number;
   }> {
-    try {
-      const count = await episodicMemoryRepository.countByUserAndApp(userId, app);
+    const cacheKey = `${CACHE_PREFIX}stats:${userId}:${app}`;
 
-      return {
+    try {
+      // Try cache first (short TTL for stats)
+      const cached = await globalCache.get<{
+        slotCount: number;
+        maxSlots: number;
+        usagePercentage: number;
+      }>(cacheKey);
+      
+      if (cached) {
+        return cached;
+      }
+
+      const count = await episodicMemoryRepository.countByUserAndApp(userId, app);
+      
+      const stats = {
         slotCount: count,
         maxSlots: MAX_SLOTS_PER_USER,
         usagePercentage: (count / MAX_SLOTS_PER_USER) * 100,
       };
+
+      // Cache stats for 30 seconds
+      await globalCache.set(cacheKey, stats, { ttl: 30 });
+
+      return stats;
     } catch (error) {
       appLogger.error('Failed to get user memory stats', {
         error: error instanceof Error ? error.message : error,
@@ -534,13 +726,21 @@ Pesan saat ini:
   }
 
   // ============================================================
-  // 1️⃣3️⃣ HEALTH CHECK
+  // 1️⃣3️⃣ HEALTH CHECK (with timeout)
   // ============================================================
   async isHealthy(): Promise<boolean> {
     try {
-      // Test repository connection
-      await episodicMemoryRepository.countByUserAndApp('health_check', 'test');
-      return true;
+      // Add timeout to health check
+      const timeoutPromise = new Promise<boolean>((resolve) => {
+        setTimeout(() => resolve(false), 5000);
+      });
+      
+      const healthCheckPromise = (async () => {
+        await episodicMemoryRepository.countByUserAndApp('health_check', 'test');
+        return true;
+      })();
+      
+      return await Promise.race([healthCheckPromise, timeoutPromise]);
     } catch (error) {
       appLogger.error('Episodic memory health check failed', {
         error: error instanceof Error ? error.message : error

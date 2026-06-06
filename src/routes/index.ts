@@ -3,12 +3,12 @@ import { intentRoutes } from './intent.route'
 import { adminKnowledgeRoutes } from './adminKnowledge.routes'
 
 export async function registerRoutes(fastify: FastifyInstance) {
-  // health check biar gampang test
+  // Health check
   fastify.get('/health', async () => {
     return { status: 'ok' }
   })
 
-  // Chat / Intent pipeline
+  // Chat / Intent pipeline (HTTP)
   await fastify.register(intentRoutes, { prefix: '/intent' })
 
   // Admin

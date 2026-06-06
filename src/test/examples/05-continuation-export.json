@@ -1,0 +1,51 @@
+{
+  "example": "Export Continuation - Excel Export",
+  "description": "User first gets attendance data, then asks to export as Excel",
+  "step1_request": {
+    "user_id": "user_1",
+    "app_name": "hris",
+    "text": "Tampilkan data absensi karyawan terlambat"
+  },
+  "step1_response": {
+    "success": true,
+    "response": "Ada 12 karyawan terlambat hari ini.",
+    "intent": "attendance_report",
+    "confidence": 0.92,
+    "metadata": {
+      "executionTime": 256,
+      "stage": "naturalization",
+      "source": "tool_execution",
+      "toolsUsed": ["attendance_api"]
+    }
+  },
+  "step2_request": {
+    "user_id": "user_1",
+    "app_name": "hris",
+    "text": "Yang tadi export excel",
+    "chat_history": [
+      {
+        "role": "user",
+        "content": "Tampilkan data absensi karyawan terlambat"
+      },
+      {
+        "role": "assistant",
+        "content": "Ada 12 karyawan terlambat hari ini."
+      }
+    ]
+  },
+  "step2_response": {
+    "success": true,
+    "response": "File Excel berisi data 12 karyawan terlambat telah siap untuk diunduh.",
+    "intent": "attendance_report",
+    "confidence": 0.96,
+    "metadata": {
+      "executionTime": 189,
+      "stage": "naturalization",
+      "source": "continuation",
+      "continuationType": "export",
+      "exportFormat": "xlsx",
+      "fileSize": "125KB",
+      "downloadUrl": "/api/v1/download/attendance_2026-05-26.xlsx"
+    }
+  }
+}

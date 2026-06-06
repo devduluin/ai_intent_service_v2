@@ -45,7 +45,7 @@ module.exports = {
   async down(queryInterface, Sequelize) {
     await queryInterface.bulkDelete('llm_models', {
       modelCode: [
-        'qwen3.5-flash',
+        'qwen3.5-flash-2026-02-23',
         'qwen-flash-2025-07-28',
       ],
     })

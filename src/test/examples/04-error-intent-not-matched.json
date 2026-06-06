@@ -1,0 +1,31 @@
+{
+  "example": "Error - Intent Not Matched",
+  "description": "User asks something that doesn't match any known intent",
+  "request": {
+    "user_id": "user_1",
+    "app_name": "hris",
+    "text": "Berapa jumlah gajah di Afrika?"
+  },
+  "response": {
+    "success": false,
+    "response": "Maaf, saya tidak mengerti permintaan Anda.",
+    "error": {
+      "code": "INTENT_NOT_MATCHED",
+      "message": "No matching intent found for user input",
+      "details": {
+        "topMatches": [
+          {
+            "intent": "general_chat",
+            "confidence": 0.35
+          },
+          {
+            "intent": "animal_facts",
+            "confidence": 0.28
+          }
+        ],
+        "threshold": 0.6,
+        "userInput": "Berapa jumlah gajah di Afrika?"
+      }
+    }
+  }
+}

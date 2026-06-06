@@ -5,10 +5,14 @@ import { vectorService } from './services/vector.service';
 import { knowledgeVectorService } from './services/knowledgeVector.service';
 import { intentRegistry } from './services/intent-registry.service';
 import { intentRepository } from './repositories/intent.repository';
-import { registerAllIntents } from './intents';
+import { initializeIntents } from './intents';
+import { initializeInternalSkills } from './skills';
+import { schedulerRunnerService } from './services/automation/scheduler-runner.service';
 import { knowledgeRepository } from './repositories/knowledge.repository';
 import { knowledgeSourceRepository } from './repositories/knowledgeSource.repository';
 import { knowledgeIngestionService } from './services/knowledgeIngestion.service';
+const fastifyWebSocket = require('@fastify/websocket');
+const fastifyStatic = require('@fastify/static')
 import 'dotenv/config';
 
 // ============================================================
@@ -21,17 +25,39 @@ async function start() {
   // console.log('ENV OLLAMA:', process.env.OLLAMA_BASE_URL);
 
   try {
+    // 0.5. Register WebSocket if enabled
+    if (process.env.ENABLE_WEBSOCKET === 'true') {
+      app.log.info('Registering WebSocket...');
+      await app.register(fastifyWebSocket as any, {
+        options: {
+          maxPayload: 1048576, // 1MB
+          verifyClient: (info: any, next: any) => {
+            app.log.debug('WebSocket client connecting from ' + info.origin);
+            next(true);
+          }
+        } as any
+      });
+      app.log.info('WebSocket registered successfully');
+    } else {
+      app.log.info('WebSocket disabled (set ENABLE_WEBSOCKET=true to enable)');
+    }
+
+    // 0.6. Start automation scheduler
+    app.log.info('Starting automation scheduler...');
+    schedulerRunnerService.start();
+    app.log.info('Automation scheduler started successfully - checking jobs every minute');
+
     // 1. Koneksi ke PostgreSQL
     app.log.info('Connecting to PostgreSQL...');
     await connectDatabase();
 
-    // 2. Register handler functions ke registry
-    // (handler tetap di-register dari file TS, bukan dari DB)
-    app.log.info('Registering API handlers...');
-    registerAllIntents();
+    // 2. Initialize internal skills (auto-discovery from skills/ folder)
+    app.log.info('Initializing internal skills...');
+    await initializeInternalSkills();
 
-    // 3. Load intent definitions dari PostgreSQL
+    // 3. Load intent definitions dari PostgreSQL (DB-based routing)
     app.log.info('Loading intents from database...');
+    await initializeIntents();
     const dbIntents = await intentRepository.findAllActive({});
     app.log.info(`Loaded ${dbIntents.length} intents from DB`);
 
@@ -44,11 +70,11 @@ async function start() {
 
     // 5. Index intent dari DB ke vector DB
     app.log.info('Indexing intents into vector DB...');
-    await vectorService.indexAllIntents(dbIntents);
+    // await vectorService.indexAllIntents(dbIntents);
 
     // 6. Ingest all knowledge sources
     app.log.info('Ingesting all knowledge sources...');
-    await ingestAllKnowledge(app);
+    // await ingestAllKnowledge(app);
 
     // 7. Override registry dengan data dari DB
     // (supaya examples dari DB yang dipakai, bukan dari file)
@@ -56,6 +82,23 @@ async function start() {
       if (!intentRegistry.hasIntent(intent.slug)) {
         app.log.warn(`No handler found for intent: ${intent.name}, skipping...`);
       }
+    }
+
+    // 7.5. Serve static files for chat UI (if exists)
+    app.log.info('Registering static file serving...');
+    await app.register(fastifyStatic, {
+      root: require('path').join(__dirname, '../src/test/html'),
+      prefix: '/test/html/',
+      decorateReply: false
+    });
+    app.log.info('Static files served at /test/html/');
+
+    // 7.6. Register WebSocket chat route (if enabled)
+    if (process.env.ENABLE_WEBSOCKET === 'true') {
+      app.log.info('Registering WebSocket chat route...');
+      const { chatWsRoute } = await import('./routes/chat-ws.route');
+      await app.register(chatWsRoute, { prefix: '/api/v1' });
+      app.log.info('WebSocket chat route registered at /api/v1/chat-ws');
     }
 
     // 8. Start server
@@ -145,7 +188,15 @@ async function ingestAllKnowledge(app: any): Promise<void> {
   }
 }
 
-process.on('SIGTERM', () => { console.log('Shutting down...'); process.exit(0); });
-process.on('SIGINT', () => { console.log('Shutting down...'); process.exit(0); });
+process.on('SIGTERM', () => {
+  console.log('Shutting down...');
+  schedulerRunnerService.stop();
+  process.exit(0);
+});
+process.on('SIGINT', () => {
+  console.log('Shutting down...');
+  schedulerRunnerService.stop();
+  process.exit(0);
+});
 
 start();

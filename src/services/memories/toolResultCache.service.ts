@@ -1,12 +1,15 @@
 // services/toolResultCache.service.ts
 import { appLogger } from '../../utils/logger.util';
 import { globalCache } from '../../utils/cache-helper.util';
+import { hashParams } from '../../utils/hash.util';
 
 interface CachedToolResult {
   result: unknown;
-  toolSlug: string;
+  toolSlug?: string;      // For tool-based results
+  handlerSlug?: string;   // For handler-based results (xls_generator, data_analyzer)
   intent: string;
   entities: Record<string, unknown>;
+  params?: Record<string, unknown>;  // NEW: Store params for entity detection
   timestamp: number;
   ttl: number; // Time to live in ms
 }
@@ -14,14 +17,18 @@ interface CachedToolResult {
 interface CacheOptions {
   ttl?: number;
   skipRedis?: boolean;
+  strictParams?: boolean;
+  allowLegacyFallback?: boolean;
+  allowLatestFallback?: boolean;
 }
 
 class ToolResultCacheService {
-  private readonly DEFAULT_TTL = 30 * 60 * 1000; // 30 menit
+  private readonly DEFAULT_TTL = 15 * 1000; // 15 seconds
   private readonly CACHE_KEY_PREFIX = 'toolResult';
 
   /**
    * Store tool execution result
+   * Phase 3 Enhancement: Now includes params for entity-specific caching
    */
   async store(
     sessionKey: string,
@@ -29,16 +36,23 @@ class ToolResultCacheService {
     intent: string,
     result: unknown,
     entities: Record<string, unknown>,
+    params?: Record<string, unknown>,  // NEW: Parameters for entity-specific caching
     options?: CacheOptions
   ): Promise<void> {
     const ttl = options?.ttl || this.DEFAULT_TTL;
-    const cacheKey = this.getCacheKey(sessionKey, intent);
+    const normalizedParams = params ? this.normalizeCacheParams(params) : undefined;
+    
+    // NEW: Generate cache key with params hash
+    const cacheKey = normalizedParams 
+      ? this.getParamCacheKey(sessionKey, toolSlug, normalizedParams)
+      : this.getCacheKey(sessionKey, intent);
 
     const cacheData: CachedToolResult = {
       result,
       toolSlug,
       intent,
       entities,
+      params: normalizedParams,  // Store params for entity detection
       timestamp: Date.now(),
       ttl
     };
@@ -57,7 +71,8 @@ class ToolResultCacheService {
         cacheKey,
         ttl,
         usingRedis: globalCache.isRedisAvailable() && !options?.skipRedis,
-        cacheData
+        params: normalizedParams,
+        entities: entities
       });
     } catch (error) {
       appLogger.error('[ToolResultCache] Failed to store', {
@@ -71,10 +86,46 @@ class ToolResultCacheService {
 
   /**
    * Get last result for session and intent
+   * Phase 3 Enhancement: Now supports param-based lookup for entity detection
    */
-  async get(sessionKey: string, intent?: string, options?: CacheOptions): Promise<CachedToolResult | null> {
-    // Try with specific intent first
-    if (intent) {
+  async get(
+    sessionKey: string,
+    intent?: string,
+    options?: CacheOptions,
+    params?: Record<string, unknown>  // NEW: For entity-specific cache lookup
+  ): Promise<CachedToolResult | null> {
+    const normalizedParams = params ? this.normalizeCacheParams(params) : undefined;
+
+    // Try with specific intent and params first (most specific)
+    if (intent && normalizedParams) {
+      const paramKey = this.getParamCacheKey(sessionKey, intent, normalizedParams);
+      const cached = await globalCache.get<CachedToolResult>(paramKey, {
+        skipRedis: options?.skipRedis
+      });
+
+      if (cached && !this.isExpired(cached)) {
+        appLogger.debug('[ToolResultCache] Cache hit (param-specific)', {
+          sessionKey,
+          intent,
+          paramHash: hashParams(normalizedParams),
+          cacheKey: paramKey
+        });
+        return cached;
+      }
+
+      if (options?.strictParams) {
+        appLogger.debug('[ToolResultCache] Strict param cache miss', {
+          sessionKey,
+          intent,
+          paramHash: hashParams(normalizedParams),
+          cacheKey: paramKey
+        });
+        return null;
+      }
+    }
+
+    // Try with specific intent (legacy support)
+    if (intent && options?.allowLegacyFallback !== false) {
       const specificKey = this.getCacheKey(sessionKey, intent);
       const cached = await globalCache.get<CachedToolResult>(specificKey, {
         skipRedis: options?.skipRedis
@@ -92,6 +143,14 @@ class ToolResultCacheService {
 
     // Try to get latest result for session (any intent)
     // Note: This requires scanning memory cache only (Redis doesn't support pattern scan efficiently)
+    if (options?.allowLatestFallback === false) {
+      appLogger.debug('[ToolResultCache] Cache miss without latest fallback', {
+        sessionKey,
+        intent
+      });
+      return null;
+    }
+
     const sessionResults = await this.getLatestForSession(sessionKey, options?.skipRedis);
 
     if (sessionResults) {
@@ -311,6 +370,40 @@ class ToolResultCacheService {
    */
   private getCacheKey(sessionKey: string, intent: string): string {
     return `${this.CACHE_KEY_PREFIX}:${sessionKey}:${intent}`;
+  }
+
+  private getParamCacheKey(
+    sessionKey: string,
+    toolSlug: string,
+    params: Record<string, unknown>
+  ): string {
+    return `${this.CACHE_KEY_PREFIX}:${sessionKey}:${toolSlug}:${hashParams(params)}`;
+  }
+
+  private normalizeCacheParams(params: Record<string, unknown>): Record<string, unknown> {
+    const normalized: Record<string, unknown> = {};
+    const semanticTextKeys = new Set(['search', 'keyword', 'name']);
+
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null) {
+        continue;
+      }
+
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed === '') {
+          continue;
+        }
+        normalized[key] = semanticTextKeys.has(key)
+          ? trimmed.toLowerCase()
+          : trimmed;
+        continue;
+      }
+
+      normalized[key] = value;
+    }
+
+    return normalized;
   }
 
   /**

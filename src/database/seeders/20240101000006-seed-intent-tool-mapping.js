@@ -163,6 +163,14 @@ module.exports = {
           createdAt: now,
           updatedAt: now,
         },
+        {
+          intentId: getId(intents, 'vehicles'),
+          toolId: getId(tools, 'get_vehicle_assignment'),
+          isPrimary: true,
+          priority: 1,
+          createdAt: now,
+          updatedAt: now,
+        },
       ],
       {
         ignoreDuplicates: true,

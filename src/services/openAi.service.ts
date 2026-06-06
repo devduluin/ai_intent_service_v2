@@ -78,7 +78,7 @@ class OpenAiService {
     originalQuery: string,
     userName: string,
     language = 'Indonesia',
-    systemPrompt: string,
+    customPrompt: string,
 
     llmModel: string,
     options: { temperature?: number; num_predict?: number } = {}
@@ -94,7 +94,7 @@ class OpenAiService {
       : '';
 
     // Build system message (role: 'system')
-    const systemMessage = `${systemPrompt}
+    const systemMessage = `${customPrompt}
 
 Role: Natural language generator yang mengubah hasil handler/tools/knowledge execution menjadi jawaban yang mudah dimengerti oleh manusia.
 
@@ -103,7 +103,8 @@ Guidelines:
 - Jika ADA hasil generator lampirkan downloadUrl agar user bisa langsung mengunduh hasilnya.
 - Jangan mengarang url jika tidak ada.
 - Jika data JSON berisi pesan error jangan berikan pesan error, cukup berikan pesan yang mudah dimengerti.
-- Jika data api berisi bahasa inggris, ubah ke bahasa ${language}.
+- Jika data api berisi bahasa inggris, artikan ke bahasa ${language}.
+- jika terpotong sampaikan bahwa anda tidak dapat menampilkan semua data,
 - Tawarkan bantuan lain jika bentuknya pertanyaan.`.trim()
 
     // Build user message (role: 'user')
@@ -151,6 +152,7 @@ ${JSON.stringify(apiResult, null, 2)}`.trim()
 
     console.log(`[Alibaba naturalize] System message length: ${systemMessage.length} chars`)
     console.log(`[Alibaba naturalize] User message length: ${userMessage.length} chars`)
+    console.log(`[Alibaba naturalize] Message Prompt:${systemMessage}${userMessage}`)
 
     const completion = await this.createCompletion({
       model: llmModel,
@@ -311,7 +313,7 @@ Output:`.trim()
   ): Promise<string> {
    
     const start = Date.now()
-
+    
     const completion = await this.createCompletion({
       model: llmModel,
       messages: messages,
@@ -324,6 +326,7 @@ Output:`.trim()
     const estimatedresponseTokens = estimateTokens(completion.choices[0]?.message?.content?.trim() || '', 'alibaba')
 
     
+    // console.log(`[Message] model return: ${completion.choices[0]?.message?.content?.trim()}`)
     console.log(`[Message] Estimated prompt tokens: ${estimatedPromptTokens}`)
     console.log(`[Message] Estimated response tokens: ${estimatedresponseTokens}`)
     
@@ -349,6 +352,8 @@ Output:`.trim()
       max_tokens: options.num_predict ?? 120,
     })
 
+    
+
     const duration = Date.now() - start
     const estimatedPromptTokens = estimateTokens(prompt, 'alibaba')
     const estimatedresponseTokens = estimateTokens(response.choices[0]?.message?.content?.trim() || '', 'alibaba')
@@ -360,7 +365,7 @@ Output:`.trim()
     console.log(`[Planner] response time: ${duration} ms (${(duration/1000).toFixed(2)} s)`)
     
     const text = response.choices[0]?.message?.content?.trim() || '{}'
-
+    console.log(`[Alibaba model generateJson] response:`, text)
     return this.repairJson(text)
   }
 

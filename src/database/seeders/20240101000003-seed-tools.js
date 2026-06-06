@@ -455,13 +455,37 @@ module.exports = {
         isActive: true,
         createdAt: now,
         updatedAt: now,
+      },
+      {
+        name: 'Get Vehicle Rental Assignment',
+        slug: 'get_vehicle_assignment',
+        description: 'Gunakan Tools ini untuk mengetahui data rental kendaraan yang sedang disewa, setatus kendaraan.',
+        method: 'GET',
+        url: `https://api.sevaqu.com/api/v2/service_vehicle/vehicle-assignments/ai-summary`,
+        authType: 'none',
+
+        headers: null,
+
+        authConfig: JSON.stringify({
+          in: 'header',
+          key: 'Authorization',
+          value: '${BEARER_TOKEN}'
+        }),
+
+        bodyTemplate: null,
+
+        tags: ['kendaraan', 'vehicle', 'rental'],
+
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
       }
     ])
   },
 
   async down(queryInterface) {
     await queryInterface.bulkDelete('tools', {
-      slug: ['get_weather', 'get_time', 'checkin_trouble', 'leave_allocation_api', 'get_shift', 'get_payslip', 'claim_expense_status', 'advance_claim', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval'],
+      slug: ['get_weather', 'get_time', 'checkin_trouble', 'leave_allocation_api', 'get_shift', 'get_payslip', 'claim_expense_status', 'advance_claim', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval', 'get_vehicle_assignment'],
     })
   },
 }

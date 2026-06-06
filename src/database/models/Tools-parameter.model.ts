@@ -7,6 +7,34 @@ import {
 } from 'sequelize'
 import { sequelize } from '../connection'
 
+export type ToolParameterType = 
+  | 'string' 
+  | 'number' 
+  | 'boolean' 
+  | 'date' 
+  | 'select' 
+  | 'multiselect' 
+  | 'text' 
+  | 'email' 
+  | 'phone'
+
+export interface ToolParameterConfig {
+  options?: Array<{ label: string; value: string }>
+  format?: string
+  allowRelative?: boolean
+  minDate?: string
+  maxDate?: string
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  pattern?: string
+  minLength?: number
+  maxLength?: number
+  placeholder?: string
+  [key: string]: any
+}
+
 export class ToolParameterModel extends Model<
   InferAttributes<ToolParameterModel>,
   InferCreationAttributes<ToolParameterModel>
@@ -14,11 +42,15 @@ export class ToolParameterModel extends Model<
   declare id: CreationOptional<string>
   declare toolId: string
   declare name: string
-  declare type: 'string' | 'number' | 'boolean'
+  declare type: ToolParameterType
   declare description: string
   declare isRequired: CreationOptional<boolean>
   declare extractPrompt: string | null
   declare defaultValue: string | null
+  declare label: string | null
+  declare config: ToolParameterConfig | null
+  declare order: CreationOptional<number>
+  declare isHidden: CreationOptional<boolean>
   declare createdAt: CreationOptional<Date>
   declare updatedAt: CreationOptional<Date>
 }
@@ -43,7 +75,7 @@ ToolParameterModel.init(
       allowNull: false,
     },
     type: {
-      type: DataTypes.ENUM('string', 'number', 'boolean'),
+      type: DataTypes.STRING(50),
       allowNull: false,
       defaultValue: 'string',
     },
@@ -61,8 +93,26 @@ ToolParameterModel.init(
       allowNull: true,
     },
     defaultValue: {
-      type: DataTypes.STRING(255),
+      type: DataTypes.TEXT,
       allowNull: true,
+    },
+    label: {
+      type: DataTypes.STRING(150),
+      allowNull: true,
+    },
+    config: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    order: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    isHidden: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
     },
     createdAt: {
       type: DataTypes.DATE,

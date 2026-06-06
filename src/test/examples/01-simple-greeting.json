@@ -1,0 +1,19 @@
+{
+  "example": "Simple Chat - Greeting",
+  "request": {
+    "user_id": "user_1",
+    "app_name": "hris",
+    "text": "Halo"
+  },
+  "response": {
+    "success": true,
+    "response": "Halo! Saya adalah AI Assistant untuk HRIS. Ada yang bisa saya bantu?",
+    "intent": "greeting",
+    "confidence": 0.98,
+    "metadata": {
+      "executionTime": 150,
+      "stage": "naturalization",
+      "source": "llm_direct"
+    }
+  }
+}

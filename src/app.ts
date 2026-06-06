@@ -53,10 +53,14 @@ export async function buildApp() {
   // Global Error Handler
   // ----------------------------------------------------------
   fastify.setErrorHandler((error, _request, reply) => {
-    fastify.log.error(error)
-    reply.status(error.statusCode ?? 500).send({
+    // error is unknown by type; narrow to any to access properties safely
+    fastify.log.error(error as Error)
+    const err: any = error
+    const status = err?.statusCode ?? 500
+    const message = err?.message ?? 'Internal Server Error'
+    reply.status(status).send({
       success: false,
-      response: error.message ?? 'Internal Server Error',
+      response: message,
     })
   })
 

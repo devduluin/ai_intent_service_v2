@@ -1,9 +1,13 @@
-import { workingMemoryService, type WorkingMemoryData } from '../../workingMemory.service';
+import { workingMemoryService } from '../../workingMemory.service';
 import { toolResultCache } from '../../memories/toolResultCache.service';
-import { intentRegistry } from '../../intent-registry.service';
-import { queryDecompositionService } from '../../query-decomposition.service';
-import { openAiService } from '../../openAi.service';
 import { appLogger } from '../../../utils/logger.util';
+import { continuationAnalyzer } from '../continuation/continuation-analyzer';
+import { toolRepository } from '../../toolRepository.service';
+import { WorkingMemoryData } from '../../../types/working-memory.type'
+import { queryDecompositionService } from '../../query-decomposition.service';
+import { skillMatcher } from '../../skill-matcher.service';
+import { skillsRegistry } from '../../skills-registry.service';
+import { buildTemporalFollowUpResidue } from '../../../utils/text-intent-cleanup.util';
 
 // ============================================================
 // Types
@@ -12,14 +16,15 @@ import { appLogger } from '../../../utils/logger.util';
 export interface ContinuationIntent {
   isContinuation: boolean;
   confidence: number;
-  type?: 'export' | 'refine' | 'detail' | 'action' | 'clarify' | 'workflow' | 'new';
-  targetHandler?: string;
-  targetHandlers?: string[];
+  type?: 'export' | 'refine' | 'detail' | 'comparison' | 'action' | 'clarify' | 'workflow' | 'new';
+  targetSkill?: string;
+  targetTool?: string;
+  targetSkills?: string[];
   extractedParams?: Record<string, unknown>;
   cachedData?: {
     result: unknown;
     entities: Record<string, unknown>;
-    toolSlug: string;
+    toolSlug?: string;
     timestamp: number;
   };
   reasoning?: string;
@@ -29,6 +34,7 @@ export interface ContinuationContext {
   workingMemory: WorkingMemoryData | null;
   hasPreviousResult: boolean;
   availableContinuationTools: string[];
+  availableContinuationSkills: string[];
 }
 
 export interface ContinuationResult {
@@ -39,7 +45,7 @@ export interface ContinuationResult {
 }
 
 // ============================================================
-// Patterns
+// Constants
 // ============================================================
 
 const CONTINUATION_PATTERNS = {
@@ -51,37 +57,34 @@ const CONTINUATION_PATTERNS = {
   ],
   refine: [
     /ubah/i, /ganti/i, /modify/i, /update/i, /revisi/i, /edit/i,
-    /ganti.*yang.*baru/i,
-    /kalau/i,  // C-009 FIX: "kalau bandung?" pattern
+    /ganti.*yang.*baru/i, /kalau/i,
+    /\bcari\b/i, /\bapakah\s+ada\b/i, /\bada\s+.+\?/i,
   ],
   detail: [
     /detail/i, /lebih.*lanjut/i, /lebih.*jelas/i, /tampilkan.*semua/i,
-    /show.*all/i, /apa.*saja/i,
+    /show.*all/i, /apa.*saja/i, /analisa/i, /analyze/i, /analisis/i,
+    /summary/i, /ringkas/i, /rangkum/i, /coba.*analisa/i, /coba.*analyze/i,
   ],
   action: [
     /lanjut/i, /proses/i, /submit/i, /konfirmasi/i, /setuju/i,
-    /approve/i, /send/i, /kirim/i,
+    /approve/i, /send/i, /kirim/i, /coba/i, /cek/i, /check/i, /lihat/i,
   ],
   clarify: [
     /kenapa/i, /mengapa/i, /bagaimana/i, /apa.*arti/i, /maksudnya/i, /explain/i,
   ],
 };
 
-// C-009 FIX: Common Indonesian city names for single-word follow-up detection
 const COMMON_CITIES_PATTERN = /\b(bali|jakarta|bandung|surabaya|medan|semarang|makassar|palembang|denpasar|yogyakarta|lombok|batam|malang|padang|manado|pontianak|balikpapan|samarinda|jambi|pekanbaru|mataram|kupang|ambon|jayapura|gorontalo|kendari|ternate|palu|tasikmalaya|cirebon|banjarmasin|singkawang)\b/i;
 
 // ============================================================
-// Continuation Resolver
+// Main Resolver
 // ============================================================
 
 export class ContinuationResolver {
   private readonly CONTINUATION_CONFIDENCE_THRESHOLD = 0.6;
-  private readonly EXPORT_TOOLS_PATTERN = ['export', 'download', 'xls', 'pdf', 'csv', 'generate'];
-  private readonly USE_LLM_THRESHOLD = 0.7;
+  private readonly ANALYZER_CONFIDENCE_THRESHOLD = 0.70;
+  private readonly MIN_SKILL_CONFIDENCE = 0.55;
 
-  /**
-   * Resolve whether input is a continuation of previous context
-   */
   async resolve(
     userId: string,
     appName: string,
@@ -90,219 +93,74 @@ export class ContinuationResolver {
     options?: { useLLM?: boolean }
   ): Promise<ContinuationResult> {
     const start = Date.now();
+    const normalizedInput = userInput.trim();
+    
+    if (!normalizedInput) {
+      return this.createNonContinuationResult(null, 'Empty input');
+    }
 
     try {
-      // 1. Get working memory (use provided or fetch)
       const memory = workingMemory ?? await workingMemoryService.get(userId, appName);
-
-      // 2. Check if there's previous context
-      const hasPreviousContext = !!(
-        memory?.activeIntent ||
-        memory?.activeWorkflow ||
-        memory?.activeTool
-      );
-
-      if (!hasPreviousContext) {
-        appLogger.debug('[ContinuationResolver] No previous context, skip continuation check', {
+      
+      if (!this.hasPreviousContext(memory)) {
+        appLogger.debug('[ContinuationResolver] No previous context', {
           userId,
           appName,
           hasActiveIntent: !!memory?.activeIntent,
           hasActiveWorkflow: !!memory?.activeWorkflow,
-          hasActiveTool: !!memory?.activeTool
+          hasActiveTool: !!memory?.activeTool,
+          hasActiveSkill: !!memory?.activeSkill
         });
-
-        return {
-          shouldSkipPipeline: false,
-          intent: {
-            isContinuation: false,
-            confidence: 0,
-            type: 'new'
-          },
-          context: {
-            workingMemory: null,
-            hasPreviousResult: false,
-            availableContinuationTools: []
-          }
-        };
+        return this.createNonContinuationResult(null, 'No previous context');
       }
 
-      // 3. Fetch cache ONCE at the beginning (reuse in all branches)
-      const sessionKey = `${userId}:${appName}`;
-      const cachedData = await toolResultCache.get(sessionKey, undefined, { skipRedis: false });
-
-      // 4. Check continuation hints from working memory
-      const canExport = memory?.continuationHints?.canExport;
-      const canSummarize = memory?.continuationHints?.canSummarize;
-      const hasExportPattern = /export|download|unduh|excel|xls|xlsx|pdf|csv/i.test(userInput);
-      const hasSummarizePattern = /analisa|analyze|summary|summarize|ringkas|hitung/i.test(userInput);
-
-      // 5. Detect multi-handler workflow
-      const workflowHandlers = this.detectWorkflowHandlers(userInput, memory);
-
-      if (workflowHandlers.length > 1) {
-        appLogger.info('[ContinuationResolver] Multi-handler workflow detected', {
+      // Get analyzer result in parallel with cache fetch
+      const [analysisResult, cachedData] = await Promise.all([
+        continuationAnalyzer.analyze({
           userId,
           appName,
-          handlers: workflowHandlers,
-          userInput
-        });
+          userInput: normalizedInput,
+          workingMemory: memory
+        }),
+        toolResultCache.get(`${userId}:${appName}`, undefined, { skipRedis: false })
+      ]);
 
-        // Validate handlers
-        const validatedHandlers = await this.validateHandlers(workflowHandlers);
-
-        if (validatedHandlers.length >= 2) {
-          return {
-            shouldSkipPipeline: true,
-            intent: {
-              isContinuation: true,
-              confidence: 0.95,
-              type: 'workflow',
-              targetHandler: validatedHandlers[0],
-              targetHandlers: validatedHandlers,
-              cachedData: cachedData ? {
-                result: cachedData.result,
-                entities: cachedData.entities,
-                toolSlug: cachedData.toolSlug,
-                timestamp: cachedData.timestamp
-              } : undefined,
-              reasoning: `Multi-handler workflow: ${validatedHandlers.join(' → ')}`
-            },
-            context: {
-              workingMemory: memory,
-              hasPreviousResult: !!cachedData,
-              availableContinuationTools: validatedHandlers
-            }
-          };
-        }
-      }
-
-      // 6. Fast-track single handler (LLM-free)
-      if (canExport && hasExportPattern) {
-        const targetHandler = userInput.toLowerCase().includes('pdf') ? 'pdf_generator' : 'xls_generator';
-        const handlerExists = await this.handlerExists(targetHandler);
-
-        if (handlerExists) {
-          appLogger.info('[ContinuationResolver] Quick match: canExport=true + export pattern', {
-            userId,
-            appName,
-            userInput,
-            canExport
-          });
-
-          return {
-            shouldSkipPipeline: true,
-            intent: {
-              isContinuation: true,
-              confidence: 0.9,
-              type: 'export',
-              targetHandler,
-              cachedData: cachedData ? {
-                result: cachedData.result,
-                entities: cachedData.entities,
-                toolSlug: cachedData.toolSlug,
-                timestamp: cachedData.timestamp
-              } : undefined,
-              reasoning: 'Export pattern matched with canExport hint from working memory'
-            },
-            context: {
-              workingMemory: memory,
-              hasPreviousResult: !!cachedData,
-              availableContinuationTools: [targetHandler]
-            }
-          };
-        }
-      }
-
-      if (canSummarize && hasSummarizePattern) {
-        const targetHandler = 'data_analyzer';
-        const handlerExists = await this.handlerExists(targetHandler);
-
-        if (handlerExists) {
-          appLogger.info('[ContinuationResolver] Quick match: canSummarize=true + summarize pattern', {
-            userId,
-            appName,
-            userInput,
-            canSummarize
-          });
-
-          return {
-            shouldSkipPipeline: true,
-            intent: {
-              isContinuation: true,
-              confidence: 0.9,
-              type: 'detail',
-              targetHandler,
-              cachedData: cachedData ? {
-                result: cachedData.result,
-                entities: cachedData.entities,
-                toolSlug: cachedData.toolSlug,
-                timestamp: cachedData.timestamp
-              } : undefined,
-              reasoning: 'Summarize pattern matched with canSummarize hint'
-            },
-            context: {
-              workingMemory: memory,
-              hasPreviousResult: !!cachedData,
-              availableContinuationTools: [targetHandler]
-            }
-          };
-        }
-      }
-
-      // 7. Pattern-based detection (without LLM)
-      const patternMatch = this.detectContinuationPatterns(userInput);
-
-      if (patternMatch.confidence >= this.CONTINUATION_CONFIDENCE_THRESHOLD) {
-        appLogger.debug('[ContinuationResolver] Pattern-based continuation detected', {
-          userId,
-          appName,
-          confidence: patternMatch.confidence,
-          type: patternMatch.type
-        });
-
-        return {
-          shouldSkipPipeline: true,
-          intent: {
-            isContinuation: true,
-            confidence: patternMatch.confidence,
-            type: patternMatch.type,
-            targetHandler: this.inferTargetHandler(patternMatch.type, memory),
-            cachedData: cachedData ? {
-              result: cachedData.result,
-              entities: cachedData.entities,
-              toolSlug: cachedData.toolSlug,
-              timestamp: cachedData.timestamp
-            } : undefined,
-            reasoning: `Pattern-based detection: ${patternMatch.type}`
-          },
-          context: {
-            workingMemory: memory,
-            hasPreviousResult: !!cachedData,
-            availableContinuationTools: this.inferAvailableTools(patternMatch.type, memory)
-          }
-        };
-      }
-
-      // 8. No continuation detected
-      appLogger.debug('[ContinuationResolver] No continuation detected', {
+      appLogger.debug('[ContinuationResolver] Analyzer result', {
         userId,
         appName,
-        patternConfidence: patternMatch.confidence
+        isContinuation: analysisResult.isContinuation,
+        finalConfidence: analysisResult.finalConfidence,
+        continuationType: analysisResult.continuationType
       });
 
-      return {
-        shouldSkipPipeline: false,
-        intent: {
-          isContinuation: false,
-          confidence: 0,
-          type: 'new'
-        },
-        context: {
-          workingMemory: memory,
-          hasPreviousResult: !!cachedData,
-          availableContinuationTools: []
-        }
-      };
+      // Check comparison signal
+      const decomposition = queryDecompositionService.decompose(normalizedInput);
+      const comparisonSignal = decomposition.signals.comparison;
+      
+      const comparisonResult = await this.handleComparisonSignal(
+        normalizedInput,
+        comparisonSignal,
+        memory,
+        cachedData,
+        userId,
+        appName
+      );
+      if (comparisonResult) return comparisonResult;
+
+      // High confidence from analyzer
+      if (analysisResult.isContinuation && 
+          analysisResult.finalConfidence >= this.ANALYZER_CONFIDENCE_THRESHOLD) {
+        return this.buildIntentFromAnalyzer(analysisResult, memory, cachedData);
+      }
+
+      // Fallback to pattern-based detection
+      return await this.handlePatternBasedDetection(
+        normalizedInput,
+        memory,
+        cachedData,
+        userId,
+        appName
+      );
 
     } catch (error) {
       appLogger.error('[ContinuationResolver] Resolution failed', {
@@ -311,119 +169,461 @@ export class ContinuationResolver {
         appName,
         duration: Date.now() - start
       });
-
-      return {
-        shouldSkipPipeline: false,
-        intent: {
-          isContinuation: false,
-          confidence: 0,
-          type: 'new'
-        },
-        context: {
-          workingMemory: null,
-          hasPreviousResult: false,
-          availableContinuationTools: []
-        }
-      };
+      return this.createNonContinuationResult(null, 'Resolution error');
+    } finally {
+      await this.storeQuerySnapshot(userId, appName, userInput, workingMemory);
     }
   }
 
   // ============================================================
-  // Pattern Detection
+  // Private Helper Methods
   // ============================================================
 
-  /**
-   * Detect continuation type from user input patterns
-   */
-  private detectContinuationPatterns(userInput: string): {
-    confidence: number;
-    type: ContinuationIntent['type'];
-  } {
-    const lowerInput = userInput.toLowerCase();
-    const normalized = userInput.trim();
+  private hasPreviousContext(memory: WorkingMemoryData | null): boolean {
+    return !!(
+      memory?.activeIntent ||
+      memory?.activeWorkflow ||
+      memory?.activeTool ||
+      memory?.activeSkill
+    );
+  }
 
-    // C-009 FIX: Detect single-word city names as "refine" continuation
-    // e.g., "bali", "jakarta", "bandung" after a weather/time query
-    if (COMMON_CITIES_PATTERN.test(normalized)) {
-      const wordCount = normalized.split(' ').filter(Boolean).length;
-      if (wordCount === 1 && normalized.length >= 3 && normalized.length <= 20) {
-        appLogger.debug('[ContinuationResolver] Single-word city detected as continuation', {
-          userInput,
-          normalized,
-          wordCount,
-          matchesCityPattern: COMMON_CITIES_PATTERN.test(normalized)
+  private createNonContinuationResult(
+    memory: WorkingMemoryData | null,
+    reason: string
+  ): ContinuationResult {
+    return {
+      shouldSkipPipeline: false,
+      intent: {
+        isContinuation: false,
+        confidence: 0,
+        type: 'new',
+        reasoning: reason
+      },
+      context: {
+        workingMemory: memory,
+        hasPreviousResult: false,
+        availableContinuationTools: [],
+        availableContinuationSkills: []
+      }
+    };
+  }
+
+  private async handleComparisonSignal(
+    normalizedInput: string,
+    comparisonSignal: any,
+    memory: WorkingMemoryData | null,
+    cachedData: any,
+    userId: string,
+    appName: string
+  ): Promise<ContinuationResult | null> {
+    if (!comparisonSignal?.isComparison) return null;
+
+    if (comparisonSignal.baseline?.source === 'current_query') {
+      appLogger.info('[ContinuationResolver] Comparison belongs to current query, routing to main pipeline', {
+        userId,
+        appName,
+        activeTool: memory?.activeTool,
+        operator: comparisonSignal.operator
+      });
+
+      return this.createNonContinuationResult(memory, 'Comparison baseline is in current query');
+    }
+
+    if (memory?.activePlan && memory?.activeTool) {
+      appLogger.info('[ContinuationResolver] Comparison continuation detected', {
+        userId,
+        appName,
+        activeTool: memory.activeTool,
+        operator: comparisonSignal.operator
+      });
+
+      const analysisSkill = await this.getBestSkillForAnalysis(normalizedInput, true);
+
+      return {
+        shouldSkipPipeline: true,
+        intent: {
+          isContinuation: true,
+          confidence: 0.92,
+          type: 'comparison',
+          targetTool: memory.activeTool,
+          targetSkill: analysisSkill?.skillSlug,
+          cachedData: this.safeGetCachedData(cachedData),
+          reasoning: `Comparison signal matched → ${analysisSkill?.skillSlug || 'analysis skill'}`
+        },
+        context: {
+          workingMemory: memory,
+          hasPreviousResult: !!cachedData,
+          availableContinuationTools: [memory.activeTool],
+          availableContinuationSkills: analysisSkill?.skillSlug ? [analysisSkill.skillSlug] : []
+        }
+      };
+    }
+
+    appLogger.info('[ContinuationResolver] Comparison signal without active plan', {
+      userId,
+      appName,
+      operator: comparisonSignal.operator
+    });
+
+    return this.createNonContinuationResult(memory, 'Comparison requires active plan');
+  }
+
+  private buildIntentFromAnalyzer(
+    analysisResult: any,
+    memory: WorkingMemoryData | null,
+    cachedData: any
+  ): ContinuationResult {
+    const targetSkill = analysisResult.recommendation?.targetSkill;
+    
+    // ✅ DYNAMIC: Check actual capabilities instead of string matching
+    const skill = targetSkill ? skillsRegistry.getSkillBySlug(targetSkill) : null;
+    const isGenerator = skill?.capabilities?.actionTypes?.includes('export') ?? false;
+    const isAnalyzer = skill?.capabilities?.actionTypes?.includes('analyze') ?? false;
+
+    return {
+      shouldSkipPipeline: true,
+      intent: {
+        isContinuation: true,
+        confidence: analysisResult.finalConfidence,
+        type: analysisResult.continuationType as any,
+        targetSkill: targetSkill,
+        cachedData: this.safeGetCachedData(cachedData),
+        reasoning: Array.isArray(analysisResult.reasoning) 
+          ? analysisResult.reasoning.join('. ')
+          : analysisResult.reasoning,
+        extractedParams: analysisResult.entityResult?.detections?.reduce((acc: any, d: any) => {
+          acc[d.type] = d.value;
+          return acc;
+        }, {})
+      },
+      context: {
+        workingMemory: memory,
+        hasPreviousResult: !!cachedData,
+        availableContinuationTools: (targetSkill && !isGenerator && !isAnalyzer) ? [targetSkill] : [],
+        availableContinuationSkills: (targetSkill && (isGenerator || isAnalyzer)) ? [targetSkill] : []
+      }
+    };
+  }
+
+  private async handlePatternBasedDetection(
+    userInput: string,
+    memory: WorkingMemoryData | null,
+    cachedData: any,
+    userId: string,
+    appName: string
+  ): Promise<ContinuationResult> {
+    const hasData = !!cachedData?.result;
+    const canExport = memory?.continuationHints?.canExport;
+    const canSummarize = memory?.continuationHints?.canSummarize;
+    const hasExportPattern = /export|download|unduh|excel|xls|xlsx|pdf|csv/i.test(userInput);
+    const hasSummarizePattern = /analisa|analyze|summary|summarize|ringkas|hitung/i.test(userInput);
+    const decomposition = queryDecompositionService.decompose(userInput);
+    const temporalDetails = decomposition.signals.temporalDetails || [];
+
+    if (this.isTemporalRefineFollowUp(userInput, temporalDetails) && memory?.activePlan && memory?.activeTool) {
+      appLogger.debug('[ContinuationResolver] Temporal refine continuation', {
+        userId,
+        appName,
+        activeTool: memory.activeTool,
+        temporalDetails: temporalDetails.map(detail => ({
+          type: detail.type,
+          value: detail.value,
+          normalizedValue: detail.normalizedValue
+        }))
+      });
+
+      return {
+        shouldSkipPipeline: true,
+        intent: {
+          isContinuation: true,
+          confidence: 0.82,
+          type: 'refine',
+          targetTool: memory.activeTool,
+          cachedData: this.safeGetCachedData(cachedData),
+          reasoning: `Temporal refine -> ${memory.activeTool}`
+        },
+        context: {
+          workingMemory: memory,
+          hasPreviousResult: !!cachedData,
+          availableContinuationTools: [memory.activeTool],
+          availableContinuationSkills: []
+        }
+      };
+    }
+
+    // Multi-skill workflow detection
+    const workflowSkills = await this.detectWorkflowSkills(userInput, memory, hasData);
+    if (workflowSkills.length > 1) {
+      const validatedSkills = await this.validateSkills(workflowSkills);
+      if (validatedSkills.length >= 2) {
+        appLogger.info('[ContinuationResolver] Multi-skill workflow', {
+          userId,
+          appName,
+          skills: workflowSkills
         });
         return {
-          confidence: 0.75,  // High confidence for single-word city follow-ups
-          type: 'refine'
+          shouldSkipPipeline: true,
+          intent: {
+            isContinuation: true,
+            confidence: 0.95,
+            type: 'workflow',
+            targetSkill: validatedSkills[0],
+            targetSkills: validatedSkills,
+            cachedData: this.safeGetCachedData(cachedData),
+            reasoning: `Multi-skill workflow: ${validatedSkills.join(' → ')}`
+          },
+          context: {
+            workingMemory: memory,
+            hasPreviousResult: !!cachedData,
+            availableContinuationTools: [],
+            availableContinuationSkills: validatedSkills
+          }
         };
       }
     }
 
-    for (const [type, patterns] of Object.entries(CONTINUATION_PATTERNS)) {
-      for (const pattern of patterns) {
-        if (pattern.test(lowerInput)) {
-          return {
-            confidence: 0.8,
-            type: type as ContinuationIntent['type']
-          };
-        }
+    // Fast-track: Export pattern
+    if (canExport && hasExportPattern) {
+      const selectedSkill = await this.selectSkill('export', userInput, { hasData });
+      if (selectedSkill) {
+        appLogger.info('[ContinuationResolver] Export continuation', {
+          userId,
+          appName,
+          selectedSkill: selectedSkill.skillSlug
+        });
+        return this.buildExportResult(selectedSkill.skillSlug, memory, cachedData);
       }
     }
 
+    // Fast-track: Summarize pattern
+    if (canSummarize && hasSummarizePattern) {
+      const selectedSkill = await this.selectSkill('detail', userInput, { hasData });
+      if (selectedSkill) {
+        appLogger.info('[ContinuationResolver] Analyze continuation', {
+          userId,
+          appName,
+          selectedSkill: selectedSkill.skillSlug
+        });
+        return this.buildDetailResult(selectedSkill.skillSlug, memory, cachedData);
+      }
+    }
+
+    // Standard pattern detection
+    const patternMatch = this.detectContinuationPatterns(userInput);
+    if (patternMatch.confidence >= this.CONTINUATION_CONFIDENCE_THRESHOLD) {
+      if (patternMatch.type === 'refine' && memory?.activePlan && memory?.activeTool) {
+        appLogger.debug('[ContinuationResolver] Active tool refine continuation', {
+          userId,
+          appName,
+          activeTool: memory.activeTool
+        });
+
+        return {
+          shouldSkipPipeline: true,
+          intent: {
+            isContinuation: true,
+            confidence: patternMatch.confidence,
+            type: 'refine',
+            targetTool: memory.activeTool,
+            cachedData: this.safeGetCachedData(cachedData),
+            reasoning: `Pattern: refine -> ${memory.activeTool}`
+          },
+          context: {
+            workingMemory: memory,
+            hasPreviousResult: !!cachedData,
+            availableContinuationTools: [memory.activeTool],
+            availableContinuationSkills: []
+          }
+        };
+      }
+
+      const selectedSkill = await this.selectSkill(patternMatch.type, userInput, { hasData });
+      if (selectedSkill) {
+        appLogger.debug('[ContinuationResolver] Pattern-based continuation', {
+          userId,
+          appName,
+          patternType: patternMatch.type,
+          selectedSkill: selectedSkill.skillSlug
+        });
+        return this.buildPatternResult(patternMatch, selectedSkill.skillSlug, memory, cachedData);
+      }
+    }
+
+    return this.createNonContinuationResult(memory, 'No pattern matched');
+  }
+
+  private isTemporalRefineFollowUp(userInput: string, temporalDetails: any[]): boolean {
+    if (!temporalDetails.length) return false;
+
+    const normalized = userInput
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) return false;
+
+    const residue = buildTemporalFollowUpResidue(normalized);
+
+    return residue.length === 0;
+  }
+
+  // ============================================================
+  // Result Builders
+  // ============================================================
+
+  private buildExportResult(
+    skillSlug: string,
+    memory: WorkingMemoryData | null,
+    cachedData: any
+  ): ContinuationResult {
     return {
-      confidence: 0,
-      type: 'new'
+      shouldSkipPipeline: true,
+      intent: {
+        isContinuation: true,
+        confidence: 0.9,
+        type: 'export',
+        targetSkill: skillSlug,
+        cachedData: this.safeGetCachedData(cachedData),
+        reasoning: `Export pattern → ${skillSlug}`
+      },
+      context: {
+        workingMemory: memory,
+        hasPreviousResult: !!cachedData,
+        availableContinuationTools: [],
+        availableContinuationSkills: [skillSlug]
+      }
     };
   }
 
-  /**
-   * Detect workflow handlers from input
-   */
-  private detectWorkflowHandlers(
-    userInput: string,
-    memory: WorkingMemoryData | null
-  ): string[] {
-    const handlers: string[] = [];
+  private buildDetailResult(
+    skillSlug: string,
+    memory: WorkingMemoryData | null,
+    cachedData: any
+  ): ContinuationResult {
+    return {
+      shouldSkipPipeline: true,
+      intent: {
+        isContinuation: true,
+        confidence: 0.9,
+        type: 'detail',
+        targetSkill: skillSlug,
+        cachedData: this.safeGetCachedData(cachedData),
+        reasoning: `Analyze pattern → ${skillSlug}`
+      },
+      context: {
+        workingMemory: memory,
+        hasPreviousResult: !!cachedData,
+        availableContinuationTools: [],
+        availableContinuationSkills: [skillSlug]
+      }
+    };
+  }
 
-    // Check for export-related keywords
-    if (/export|download|xlsx|excel|xls/i.test(userInput)) {
-      handlers.push('xls_generator');
+  private buildPatternResult(
+    patternMatch: { confidence: number; type: ContinuationIntent['type'] },
+    skillSlug: string,
+    memory: WorkingMemoryData | null,
+    cachedData: any
+  ): ContinuationResult {
+    const isSkill = skillsRegistry.hasSkill(skillSlug);
+    
+    return {
+      shouldSkipPipeline: true,
+      intent: {
+        isContinuation: true,
+        confidence: patternMatch.confidence,
+        type: patternMatch.type,
+        targetSkill: isSkill ? skillSlug : undefined,
+        targetTool: !isSkill ? skillSlug : undefined,
+        cachedData: this.safeGetCachedData(cachedData),
+        reasoning: `Pattern: ${patternMatch.type} → ${skillSlug}`
+      },
+      context: {
+        workingMemory: memory,
+        hasPreviousResult: !!cachedData,
+        availableContinuationTools: !isSkill ? [skillSlug] : [],
+        availableContinuationSkills: isSkill ? [skillSlug] : []
+      }
+    };
+  }
+
+  // ============================================================
+  // Core Logic Methods
+  // ============================================================
+
+  private detectContinuationPatterns(userInput: string): {
+    confidence: number;
+    type: ContinuationIntent['type'];
+  } {
+    const normalized = userInput.trim();
+    const lowerInput = normalized.toLowerCase();
+
+    // Single-word city detection
+    if (COMMON_CITIES_PATTERN.test(normalized)) {
+      const wordCount = normalized.split(/\s+/).length;
+      if (wordCount === 1 && normalized.length >= 3 && normalized.length <= 20) {
+        return { confidence: 0.75, type: 'refine' };
+      }
     }
 
-    // Check for analyze-related keywords
-    if (/analisa|analyze|summary|ringkas|hitung/i.test(userInput)) {
-      handlers.push('data_analyzer');
-    }
-
-    // Check for connectors like "lalu", "kemudian", "dan"
-    if (/lalu|kemudian|dan|setelah/i.test(userInput)) {
-      // Multi-step workflow detected
-      if (handlers.length === 0) {
-        // Infer from working memory
-        if (memory?.activeTool) {
-          handlers.push(memory.activeTool);
+    // Pattern matching
+    for (const [type, patterns] of Object.entries(CONTINUATION_PATTERNS)) {
+      for (const pattern of patterns) {
+        if (pattern.test(lowerInput)) {
+          return { confidence: 0.8, type: type as ContinuationIntent['type'] };
         }
       }
     }
 
-    return handlers;
+    return { confidence: 0, type: 'new' };
   }
 
-  /**
-   * Validate handlers exist in registry
-   */
-  private async validateHandlers(handlers: string[]): Promise<string[]> {
+  private async detectWorkflowSkills(
+    userInput: string,
+    memory: WorkingMemoryData | null,
+    hasData: boolean
+  ): Promise<string[]> {
+    const skills: string[] = [];
+    const added = new Set<string>();
+
+    // Export-related
+    if (/export|download|xlsx|excel|xls|csv/i.test(userInput)) {
+      const exportSkill = await this.selectSkill('export', userInput, { hasData });
+      if (exportSkill && !added.has(exportSkill.skillSlug)) {
+        skills.push(exportSkill.skillSlug);
+        added.add(exportSkill.skillSlug);
+      }
+    }
+
+    // Analyze-related
+    if (/analisa|analyze|analisis|summary|ringkas|rangkum|hitung/i.test(userInput)) {
+      const analyzeSkill = await this.selectSkill('detail', userInput, { hasData });
+      if (analyzeSkill && !added.has(analyzeSkill.skillSlug)) {
+        skills.push(analyzeSkill.skillSlug);
+        added.add(analyzeSkill.skillSlug);
+      }
+    }
+
+    // Connector detection (lalu, kemudian, dan)
+    if (/lalu|kemudian|dan|setelah/i.test(userInput) && skills.length === 0 && memory?.activeTool) {
+      skills.push(memory.activeTool);
+    }
+
+    return skills;
+  }
+
+  private async validateSkills(skills: string[], agentId?: string): Promise<string[]> {
     const validated: string[] = [];
 
-    for (const handler of handlers) {
-      const exists = await this.handlerExists(handler);
-      if (exists) {
-        validated.push(handler);
+    for (const skill of skills) {
+      if (skillsRegistry.hasSkill(skill)) {
+        validated.push(skill);
+      } else if (agentId && await toolRepository.toolExists(agentId, skill)) {
+        validated.push(skill);
       } else {
-        appLogger.warn('[ContinuationResolver] Handler not found in registry', {
-          handler
-        });
+        appLogger.warn('[ContinuationResolver] Skill not found', { skill, agentId });
       }
     }
 
@@ -431,53 +631,145 @@ export class ContinuationResolver {
   }
 
   /**
-   * Check if handler exists in intent registry
+   * ✅ DYNAMIC: Select skill using skillMatcher (no hardcode!)
    */
-  private async handlerExists(handlerKey: string): Promise<boolean> {
-    const intents = intentRegistry.getAll();
-    return intents.some(intent => intent.handlerKey === handlerKey);
+  private async selectSkill(
+    continuationType: ContinuationIntent['type'],
+    userQuery: string,
+    context: { hasData?: boolean; previousSkill?: string; previousTool?: string }
+  ): Promise<{ skillSlug: string; confidence: number } | null> {
+    
+    if (!continuationType || continuationType === 'new') {
+      appLogger.debug('[ContinuationResolver] Skipping skill selection', {
+        continuationType,
+        reason: 'Invalid continuation type'
+      });
+      return null;
+    }
+    
+    if (!userQuery || userQuery.trim().length === 0) {
+      return null;
+    }
+
+    const match = skillMatcher.matchByContinuationType(
+      continuationType,
+      userQuery,
+      {
+        hasData: context.hasData ?? false,
+        previousSkill: context.previousSkill,
+        previousTool: context.previousTool
+      }
+    );
+
+    if (match && match.score >= this.MIN_SKILL_CONFIDENCE) {
+      return {
+        skillSlug: match.skill.slug,
+        confidence: match.score
+      };
+    }
+
+    // Fallback to default skill
+    const defaultSkill = skillMatcher.getDefaultSkill(continuationType);
+    if (defaultSkill) {
+      appLogger.debug('[ContinuationResolver] Using default skill', {
+        continuationType,
+        defaultSkill: defaultSkill.slug
+      });
+      return {
+        skillSlug: defaultSkill.slug,
+        confidence: 0.5
+      };
+    }
+
+    return null;
+  }
+
+  private safeGetCachedData(cachedData: any): any {
+    if (!cachedData) return undefined;
+    
+    return {
+      result: cachedData.result,
+      entities: cachedData.entities,
+      toolSlug: cachedData.toolSlug,
+      timestamp: cachedData.timestamp || Date.now()
+    };
+  }
+
+  private async storeQuerySnapshot(
+    userId: string,
+    appName: string,
+    userInput: string,
+    workingMemory?: WorkingMemoryData | null
+  ): Promise<void> {
+    try {
+      const memory = workingMemory ?? await workingMemoryService.get(userId, appName);
+      
+      if (memory?.activeIntent) {
+        await continuationAnalyzer.storeSnapshot(userId, appName, {
+          originalQuery: userInput,
+          intentSlug: memory.activeIntent,
+          intentEmbedding: undefined,
+          confidence: memory.continuationHints ? 0.8 : 0.5,
+          entities: memory.activeEntities || {},
+          executionType: memory.activeSkill ? 'skill' : memory.activeTool ? 'tool' : 'chat',
+          skillKey: memory.activeSkill,
+          toolSlug: memory.activeTool,
+          hasResult: true
+        });
+      }
+    } catch (error) {
+      appLogger.warn('[ContinuationResolver] Failed to store snapshot', {
+        error: error instanceof Error ? error.message : error
+      });
+    }
   }
 
   /**
-   * Infer target handler from continuation type
+   * Get the best skill for analysis/comparison operations
+   * Prioritizes skills with 'analyze' or 'comparison' action types
    */
-  private inferTargetHandler(
-    type: ContinuationIntent['type'],
-    memory: WorkingMemoryData | null
-  ): string | undefined {
-    switch (type) {
-      case 'export':
-        return 'xls_generator';
-      case 'refine':
-        return memory?.activeTool || undefined;
-      case 'detail':
-        return 'data_analyzer';
-      default:
-        return memory?.activeTool || undefined;
-    }
+  private async getBestSkillForAnalysis(
+    userQuery: string,
+    requireData: boolean = true
+  ): Promise<{ skillSlug: string; confidence: number } | null> {
+    // Try 'comparison' action type first
+    const comparisonSkill = await this.selectSkill('comparison', userQuery, { hasData: requireData });
+    if (comparisonSkill) return comparisonSkill;
+    
+    // Fallback to 'detail' (analyze)
+    const analyzeSkill = await this.selectSkill('detail', userQuery, { hasData: requireData });
+    if (analyzeSkill) return analyzeSkill;
+    
+    // Last resort: any skill with 'analyze' capability
+    const anyAnalyzeSkill = await this.selectAnySkillWithCapability('analyze', userQuery, requireData);
+    if (anyAnalyzeSkill) return anyAnalyzeSkill;
+    
+    return null;
   }
 
-  /**
-   * Infer available tools from continuation type
-   */
-  private inferAvailableTools(
-    type: ContinuationIntent['type'],
-    memory: WorkingMemoryData | null
-  ): string[] {
-    const tools: string[] = [];
-
-    if (type === 'export' || type === 'refine') {
-      tools.push('xls_generator');
+  private async selectAnySkillWithCapability(
+    capability: string,
+    userQuery: string,
+    requireData: boolean
+  ): Promise<{ skillSlug: string; confidence: number } | null> {
+    const allSkills = skillsRegistry.getAllSkills();
+    const matchingSkills = allSkills.filter(skill => 
+      skill.capabilities?.actionTypes?.includes(capability)
+    );
+    
+    for (const skill of matchingSkills) {
+      const match = skillMatcher.matchByContinuationType('detail', userQuery, {
+        hasData: requireData,
+        previousSkill: undefined,
+        previousTool: undefined
+      });
+      if (match && match.score >= this.MIN_SKILL_CONFIDENCE) {
+        return { skillSlug: skill.slug, confidence: match.score };
+      }
     }
-
-    if (type === 'detail' || type === 'clarify') {
-      tools.push('data_analyzer');
-    }
-
-    if (memory?.activeTool && !tools.includes(memory.activeTool)) {
-      tools.push(memory.activeTool);
-    }
-
-    return tools;
+    
+    return null;
   }
 }
+
+export const continuationResolver = new ContinuationResolver();
