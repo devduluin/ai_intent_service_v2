@@ -826,7 +826,7 @@ class PipelineService {
         },
         naturalResponse: message,
         metadata: {
-          durationMs: Date.now() - startTotal,
+          totalTime: Date.now() - startTotal,
           confirmation: {
             status: commitResult.kind === 'automation_job_created' ? 'confirmed' : 'failed',
             type: pending.type
@@ -921,14 +921,13 @@ class PipelineService {
       intent: 'confirmation_required',
       naturalResponse: await confirmationPromptService.buildPrompt(confirmation),
       metadata: {
-        ...result.metadata,
         confirmation: {
           id: confirmation.id,
           type: confirmation.type,
           status: confirmation.status,
           expiresAt: confirmation.expiresAt
         },
-        durationMs: Date.now() - startTotal
+        totalTime: Date.now() - startTotal
       }
     };
   }
@@ -1182,13 +1181,13 @@ class PipelineService {
       apiResult: executionResult.results,
       naturalResponse,
       metadata: {
-        durationMs: Date.now() - startTotal,
-        executedTasks: executionResult.metrics.executedTasks,
-        totalTasks: executionResult.metrics.totalTasks,
-        executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
-        activePlan: plan,
-        resolvedParams: params,
-        acceptedOffer: offer
+        totalTime: Date.now() - startTotal,
+        // executedTasks: executionResult.metrics.executedTasks,
+        // totalTasks: executionResult.metrics.totalTasks,
+        // executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
+        // activePlan: plan,
+        // resolvedParams: params,
+        // acceptedOffer: offer
       }
     };
   }

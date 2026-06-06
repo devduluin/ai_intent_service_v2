@@ -584,10 +584,10 @@ export class PipelineCore {
               apiResult: null,
               naturalResponse: clarificationQuestion,
               metadata: {
-                durationMs: Date.now() - startTotal,
-                needsClarification: true,
-                clarificationQuestion,
-                activePlan: safePlan
+                totalTime: Date.now() - startTotal,
+                // needsClarification: true,
+                // clarificationQuestion,
+                // activePlan: safePlan
               }
             };
           }
@@ -602,8 +602,8 @@ export class PipelineCore {
             apiResult: null,
             naturalResponse: '',
             metadata: {
-              durationMs: Date.now() - startTotal,
-              fallbackToChat: 1
+              totalTime: Date.now() - startTotal,
+              // fallbackToChat: 1
             }
           };
         }
@@ -651,14 +651,14 @@ export class PipelineCore {
             perceptionFrame?.emotion
           ),
           metadata: {
-            durationMs: Date.now() - startTotal,
-            missingParams: missingParamsResult.missingParams,
-            missingResourceParams: missingParamsResult.missingResourceParams,
-            resourceParams: paramExtraction.resourceParams,
-            collectedParams: safeParams,
-            intentSlugs: slotFillingSlugs,
-            // C-009 FIX: Include the actual plan with tasks for execution after slot filling
-            originalPlan: safePlan
+            totalTime: Date.now() - startTotal,
+            // missingParams: missingParamsResult.missingParams,
+            // missingResourceParams: missingParamsResult.missingResourceParams,
+            // resourceParams: paramExtraction.resourceParams,
+            // collectedParams: safeParams,
+            // intentSlugs: slotFillingSlugs,
+            // // C-009 FIX: Include the actual plan with tasks for execution after slot filling
+            // originalPlan: safePlan
           }
         };
       }
@@ -746,14 +746,14 @@ export class PipelineCore {
             perceptionFrame?.emotion
           ),
           metadata: {
-            durationMs: Date.now() - startTotal,
-            recovery: selfCorrectionResult.recoveryContext,
-            recoveryTrace: selfCorrectionResult.trace,
-            activePlan: safePlan,
-            resolvedParams: safeParams,
-            executedTasks: executionResult.metrics.executedTasks,
-            totalTasks: executionResult.metrics.totalTasks,
-            executedTasksDetails: executionResult.metrics.executedTasksDetails || []
+            totalTime: Date.now() - startTotal,
+            // recovery: selfCorrectionResult.recoveryContext,
+            // recoveryTrace: selfCorrectionResult.trace,
+            // activePlan: safePlan,
+            // resolvedParams: safeParams,
+            // executedTasks: executionResult.metrics.executedTasks,
+            // totalTasks: executionResult.metrics.totalTasks,
+            // executedTasksDetails: executionResult.metrics.executedTasksDetails || []
           }
         };
       }
@@ -836,16 +836,16 @@ export class PipelineCore {
         apiResult: correctedApiResults,
         naturalResponse: guardedNaturalResponse,
         metadata: {
-          durationMs: Date.now() - startTotal,
-          executedTasks: executionResult.metrics.executedTasks,
-          totalTasks: executionResult.metrics.totalTasks,
-          executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
-          activePlan: safePlan,
-          resolvedParams: safeParams,
-          activeOffer: selectedOffer,
-          recovery: selfCorrectionResult?.recoveryContext,
-          recoveryTrace: selfCorrectionResult?.trace || [],
-          blockedUnsafeSuccessClaim
+          totalTime: Date.now() - startTotal,
+          // executedTasks: executionResult.metrics.executedTasks,
+          // totalTasks: executionResult.metrics.totalTasks,
+          // executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
+          // activePlan: safePlan,
+          // resolvedParams: safeParams,
+          // activeOffer: selectedOffer,
+          // recovery: selfCorrectionResult?.recoveryContext,
+          // recoveryTrace: selfCorrectionResult?.trace || [],
+          // blockedUnsafeSuccessClaim
         }
       };
 
