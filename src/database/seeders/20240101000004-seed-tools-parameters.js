@@ -8,7 +8,7 @@ module.exports = {
     // 🔥 Ambil tools yg sudah di-seed
     const tools = await queryInterface.sequelize.query(
       `SELECT id, slug FROM tools
-       WHERE slug IN ('get_weather','get_time', 'checkin_trouble', 'leave_allocation_api', 'get_shift', 'get_payslip', 'claim_expense_status', 'advance_claim', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval', 'get_vehicle_assignment')`,
+       WHERE slug IN ('get_weather','get_time', 'checkin_trouble', 'leave_allocation_api', 'get_shift', 'get_payslip', 'claim_expense_status', 'advance_claim', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
 
@@ -405,85 +405,85 @@ module.exports = {
         createdAt: now,
         updatedAt: now,
       },
-      {
-        toolId: toolMap['get_vehicle_assignment'],
-        name: 'company_id',
-        type: 'string',
-        label: 'Company ID',
-        description: 'Company ID',
-        isRequired: true,
-        extractPrompt: 'Company ID. Jika tidak disebutkan, gunakan dari passing data',
-        defaultValue: '',
-        config: JSON.stringify({
-          placeholder: 'Masukkan Company ID',
-          pattern: '^[A-Z0-9]+$',
-          minLength: 3,
-          maxLength: 10
-        }),
-        order: 1,
-        isHidden: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        toolId: toolMap['get_vehicle_assignment'],
-        name: 'status',
-        type: 'select',
-        label: 'Status Kendaraan',
-        description: 'Status kendaraan',
-        isRequired: true,
-        extractPrompt: 'Status kendaraan. Jika tidak disebutkan, Tanyakan status : active, leave, exit',
-        defaultValue: 'exit',
-        config: JSON.stringify({
-          options: [
-            { label: 'Aktif', value: 'active' },
-            { label: 'Cuti/Izin', value: 'leave' },
-            { label: 'Keluar', value: 'exit' }
-          ]
-        }),
-        order: 2,
-        isHidden: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        toolId: toolMap['get_vehicle_assignment'],
-        name: 'date',
-        type: 'date',
-        label: 'Tanggal',
-        description: 'Tanggal pengecekan',
-        isRequired: true,
-        extractPrompt: 'Tanggal. Jika tidak disebutkan, gunakan dari date hari ini',
-        defaultValue: '[datenow]',
-        config: JSON.stringify({
-          format: 'YYYY-MM-DD',
-          allowRelative: true,
-          placeholder: 'YYYY-MM-DD'
-        }),
-        order: 3,
-        isHidden: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        toolId: toolMap['get_vehicle_assignment'],
-        name: 'search',
-        type: 'string',
-        label: 'Kata Kunci Pencarian',
-        description: 'Nama Driver, Plat nomor atau nomor polisi',
-        isRequired: false,
-        extractPrompt: 'Nama Driver atau nomor polisi. Jika tidak disebutkan, gunakan dari passing data',
-        defaultValue: '',
-        config: JSON.stringify({
-          placeholder: 'Cari berdasarkan nama driver atau nomor polisi',
-          minLength: 2,
-          maxLength: 50
-        }),
-        order: 4,
-        isHidden: false,
-        createdAt: now,
-        updatedAt: now,
-      }
+      // {
+      //   toolId: toolMap['get_vehicle_assignment'],
+      //   name: 'company_id',
+      //   type: 'string',
+      //   label: 'Company ID',
+      //   description: 'Company ID',
+      //   isRequired: true,
+      //   extractPrompt: 'Company ID. Jika tidak disebutkan, gunakan dari passing data',
+      //   defaultValue: '',
+      //   config: JSON.stringify({
+      //     placeholder: 'Masukkan Company ID',
+      //     pattern: '^[A-Z0-9]+$',
+      //     minLength: 3,
+      //     maxLength: 10
+      //   }),
+      //   order: 1,
+      //   isHidden: false,
+      //   createdAt: now,
+      //   updatedAt: now,
+      // },
+      // {
+      //   toolId: toolMap['get_vehicle_assignment'],
+      //   name: 'status',
+      //   type: 'select',
+      //   label: 'Status Kendaraan',
+      //   description: 'Status kendaraan',
+      //   isRequired: true,
+      //   extractPrompt: 'Status kendaraan. Jika tidak disebutkan, Tanyakan status : active, leave, exit',
+      //   defaultValue: 'exit',
+      //   config: JSON.stringify({
+      //     options: [
+      //       { label: 'Aktif', value: 'active' },
+      //       { label: 'Cuti/Izin', value: 'leave' },
+      //       { label: 'Keluar', value: 'exit' }
+      //     ]
+      //   }),
+      //   order: 2,
+      //   isHidden: false,
+      //   createdAt: now,
+      //   updatedAt: now,
+      // },
+      // {
+      //   toolId: toolMap['get_vehicle_assignment'],
+      //   name: 'date',
+      //   type: 'date',
+      //   label: 'Tanggal',
+      //   description: 'Tanggal pengecekan',
+      //   isRequired: true,
+      //   extractPrompt: 'Tanggal. Jika tidak disebutkan, gunakan dari date hari ini',
+      //   defaultValue: '[datenow]',
+      //   config: JSON.stringify({
+      //     format: 'YYYY-MM-DD',
+      //     allowRelative: true,
+      //     placeholder: 'YYYY-MM-DD'
+      //   }),
+      //   order: 3,
+      //   isHidden: false,
+      //   createdAt: now,
+      //   updatedAt: now,
+      // },
+      // {
+      //   toolId: toolMap['get_vehicle_assignment'],
+      //   name: 'search',
+      //   type: 'string',
+      //   label: 'Kata Kunci Pencarian',
+      //   description: 'Nama Driver, Plat nomor atau nomor polisi',
+      //   isRequired: false,
+      //   extractPrompt: 'Nama Driver atau nomor polisi. Jika tidak disebutkan, gunakan dari passing data',
+      //   defaultValue: '',
+      //   config: JSON.stringify({
+      //     placeholder: 'Cari berdasarkan nama driver atau nomor polisi',
+      //     minLength: 2,
+      //     maxLength: 50
+      //   }),
+      //   order: 4,
+      //   isHidden: false,
+      //   createdAt: now,
+      //   updatedAt: now,
+      // }
       // ── Get Time → tidak butuh parameter tambahan ─────────
       // (contoh intent tanpa parameter — tidak ada row di sini)
     ], {})
@@ -491,7 +491,7 @@ module.exports = {
 
   async down(queryInterface) {
     const tools = await queryInterface.sequelize.query(
-      `SELECT id FROM tools WHERE slug IN ('get_weather', 'get_time', 'checkin_trouble', 'leave_allocation_api', 'get_shift', 'get_payslip', 'claim_expense_status', 'advance_claim', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval', 'get_vehicle_assignment')`,
+      `SELECT id FROM tools WHERE slug IN ('get_weather', 'get_time', 'checkin_trouble', 'leave_allocation_api', 'get_shift', 'get_payslip', 'claim_expense_status', 'advance_claim', 'advance_claim_total', 'advance_claim_unreported', 'travel_request_status', 'travel_request_total', 'travel_request_unreported', 'get_employee_detail', 'request_wfh', 'request_tukar_shift', 'request_overtime', 'get_leave_approval')`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     )
     const ids = tools.map((i) => i.id)
