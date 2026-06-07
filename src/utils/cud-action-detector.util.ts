@@ -32,7 +32,7 @@ const CUD_PATTERNS: Array<{
   { regex: /^h(?:apus|ps)\s+\d+/i, category: 'delete', verb: 'hapus' },
 
   // Create
-  { regex: /^(simpan|save|ya)\b$/i, category: 'create', verb: 'simpan' },
+  { regex: /^(simpan|save)\b$/i, category: 'create', verb: 'simpan' },
   { regex: /^(buat|bikin|create|generate|tambah|add)\b/i, category: 'create', verb: 'buat' },
 
   // Update
@@ -45,6 +45,19 @@ const CUD_PATTERNS: Array<{
 
 export function detectCudAction(text: string, activeState?: ActiveState): CudDetectionResult {
   const normalized = String(text || '').trim();
+
+  if (/^(ya|iya|iy|yes|y|ok|oke)$/i.test(normalized)) {
+    if (activeState?.hasPendingConfirmation) {
+      return {
+        isCudAction: true,
+        verb: 'simpan',
+        category: 'create',
+        suggestedResponse: buildCudResponse('simpan', 'create', activeState),
+      };
+    }
+
+    return { isCudAction: false };
+  }
 
   for (const pattern of CUD_PATTERNS) {
     if (pattern.regex.test(normalized)) {

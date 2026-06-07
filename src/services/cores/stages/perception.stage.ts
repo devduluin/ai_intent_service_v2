@@ -159,7 +159,7 @@ function detectSmallTalk(text: string): PerceptionFrame | null {
   }
 
   // Identity/self-awareness questions — route to greeting skill for VIPER-IDENTITY.md
-  if (isIdentityQuestion(text)) {
+  if (isSelfIdentityQuestion(text)) {
     return {
       type: 'small_talk',
       operations: ['clarify'],
@@ -171,20 +171,64 @@ function detectSmallTalk(text: string): PerceptionFrame | null {
   return null;
 }
 
-function isIdentityQuestion(text: string): boolean {
+function isSelfIdentityQuestion(text: string): boolean {
   const n = normalizeForMatch(text);
   if (!n) return false;
 
   return (
-    /\b(siapa\s+(anda|kamu|ini|lo|elu|gue)|who\s+(are|is)\s+(you|this)|what\s+are\s+you)\b/i.test(n) ||
-    /\b(bagaimana|gimana|how)\s+(anda|kamu|you)\s+(didesain|dibangun|dibuat|bekerja|kerja|designed|built|made|work|function|arsitektur|architecture)\b/i.test(n) ||
-    /\b(bagaimana|gimana|how)\s+.+\s+(anda|kamu|you)\b/i.test(n) ||
-    /\b(jelaskan|jelasin|explain|describe|tell me about)\s+(dirimu|tentang kamu|tentang anda|arsitekturmu|yourself|your architecture)\b/i.test(n) ||
-    /\b(apakah\s+(anda|kamu)\s+(manusia|robot|ai|bot|asli|program)|are\s+you\s+(human|real|a robot|ai|a bot))\b/i.test(n) ||
-    /\b(apa|apakah)\s+(anda|kamu|you)\s+(punya|bisa|memiliki|have|has|can)\s+(memory|ingatan|konteks|riwayat|sejarah|context|history|kemampuan|capabilit)/i.test(n) ||
-    /\b(kamu|anda|you)\s+(punya|bisa|memiliki|have|has|can)\s+(memory|ingatan|konteks|riwayat|sejarah|context|history)\b/i.test(n) ||
-    /^(siapa kamu|siapa anda|who are you|kenalan dong|introduce yourself|perkenalkan dirimu)$/i.test(n)
+    /^(siapa|apa)\s+(anda|kamu|viper|ini)$/i.test(n) ||
+    /^(kamu|anda)\s+(itu|ini)?\s*(siapa|apa)$/i.test(n) ||
+    /^(who are you|what are you|who is this|what is this)$/i.test(n) ||
+    /^(apakah\s+)?(anda|kamu)\s+(manusia|robot|ai|bot|asli|program)$/i.test(n) ||
+    /^are you (human|real|a robot|ai|a bot)$/i.test(n) ||
+    /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(bekerja|kerja|didesain|dibangun|dibuat|berfungsi)$/i.test(n) ||
+    /^how (do you work|are you designed|are you built)$/i.test(n) ||
+    /^(jelaskan|jelasin|ceritakan)\s+(dirimu|tentang kamu|tentang anda|tentang viper|arsitekturmu|arsitektur anda)$/i.test(n) ||
+    /^(explain|describe|tell me about)\s+(yourself|your architecture)$/i.test(n) ||
+    /^(kenalan dong|introduce yourself|perkenalkan dirimu|ceritakan tentang dirimu)$/i.test(n)
   );
+}
+
+function detectAssistantFeedback(text: string): PerceptionFrame | null {
+  const normalized = normalizeForMatch(text);
+  if (!normalized) return null;
+
+  const hasAssistantTarget = /\b(anda|kamu|mu|jawaban|respon|response|answer|balasan)\b/i.test(normalized);
+  if (!hasAssistantTarget) return null;
+
+  const styleSignals = [
+    'singkat sekali',
+    'terlalu singkat',
+    'terlalu pendek',
+    'kurang lengkap',
+    'kurang jelas',
+    'tidak jelas',
+    'jawaban anda',
+    'jawaban kamu',
+    'respon anda',
+    'respon kamu',
+    'terlalu panjang',
+    'terlalu formal',
+    'terlalu robot',
+    'lebih detail',
+    'jelaskan lebih',
+    'jangan terlalu',
+    'aneh'
+  ];
+
+  const matched = styleSignals.filter(signal => containsPhrase(normalized, signal));
+  if (matched.length === 0) return null;
+
+  return {
+    type: 'assistant_feedback',
+    operations: ['clarify'],
+    confidence: matched.length >= 2 ? HIGH_CONFIDENCE : MEDIUM_CONFIDENCE,
+    reasoning: [`Assistant response feedback matched: ${matched.join(', ')}`],
+    target: {
+      resource: 'skill',
+      kind: 'current_context'
+    }
+  };
 }
 
 function hasOperationalSignal(text: string, signals: UserMessageSignals): boolean {
@@ -530,6 +574,15 @@ export class PerceptionStage {
     if (offerResponseFrame) {
       appLogger.debug('[PerceptionStage] → offer_response', { confidence: offerResponseFrame.confidence });
       return { frame: { ...offerResponseFrame, emotion } };
+    }
+
+    const assistantFeedbackFrame = detectAssistantFeedback(text);
+    if (assistantFeedbackFrame) {
+      appLogger.debug('[PerceptionStage] -> assistant_feedback', { confidence: assistantFeedbackFrame.confidence });
+      return {
+        frame: { ...assistantFeedbackFrame, temporalScope: extractTemporalScope(signals), emotion },
+        skipEmbedding: true
+      };
     }
 
     // ---- 3. Continuation / Refine ----

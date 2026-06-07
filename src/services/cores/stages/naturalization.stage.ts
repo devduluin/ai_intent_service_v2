@@ -1,10 +1,10 @@
 import { naturalizationService } from '../../naturalization.service';
-import { userProfileService } from '../../user-profile.service';
 import type { PipelineInput } from '../../../types';
 import type { Agent } from '../../../types/agent.types';
 import type { ContextCache } from './types/context-cache';
 import { appLogger } from '../../../utils/logger.util';
 import { withTimeout } from '../../../utils/async-helpers.util';
+import { resolveDisplayName } from '../../../utils/user-display-name.util';
 
 const NATURALIZATION_TIMEOUT = 15000;
 
@@ -48,18 +48,7 @@ export class NaturalizationStage {
     const timeout = options?.timeout ?? NATURALIZATION_TIMEOUT;
 
     try {
-      // Resolve user name: user profile > input.attributes.name > 'User'
-      let userName = 'User';
-      try {
-        const profile = await userProfileService.getContext(input.user_id, input.app_name);
-        if (profile?.identity?.name) {
-          userName = profile.identity.name;
-        } else if (input.attributes?.name) {
-          userName = input.attributes.name as string;
-        }
-      } catch {
-        userName = (input.attributes?.name as string) || 'User';
-      }
+      const userName = await resolveDisplayName(input) || 'User';
 
       const naturalResponse = await withTimeout(
         naturalizationService.naturalize(

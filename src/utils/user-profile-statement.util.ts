@@ -151,6 +151,9 @@ export function isPotentialDynamicProfileStatementText(text: string): boolean {
   const normalized = normalizeText(text);
   if (!normalized) return false;
   if (isUserProfileQuestionText(text)) return false;
+  if (/\b(tidak bisa|nggak bisa|gak bisa|ga bisa|cannot|can't|cant|error|gagal|fail|failed|masalah|problem|kendala|trouble)\b/i.test(normalized)) {
+    return false;
+  }
   if (/\b(cek|tampilkan|lihat|buat|hapus|jalankan|bandingkan|analisa|export|download|ingatkan|jadwalkan|tanya|tanyakan|bahas|bicarakan|lakukan|kerjakan|riwayat|history)\b/i.test(normalized)) {
     return false;
   }

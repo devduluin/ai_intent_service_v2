@@ -104,7 +104,7 @@ export const config = {
   },
 
   memory: {
-    maxRowMemoryPerUser: parseInt(process.env.MAX_SLOTS_PER_USER ?? '25'),
+    maxRowMemoryPerUser: parseInt(process.env.MAX_SLOTS_PER_USER ?? '100'),
   },
 
 } as const

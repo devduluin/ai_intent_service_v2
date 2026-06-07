@@ -7,6 +7,22 @@ export class UserProfileRecallService {
     appName: string,
     query: UserProfileRecallQuery
   ): Promise<UserProfileRecallResult> {
+    const byRequestedKeys = query.requestedKeys?.length
+      ? await userProfileRepository.findByKeys(userId, appName, query.requestedKeys)
+      : [];
+
+    if (byRequestedKeys.length > 0) {
+      return this.buildResult(query.userText, byRequestedKeys.filter(fact => fact.status === 'active'));
+    }
+
+    if (this.isSelfIdentityQuestion(query.userText)) {
+      const identityFacts = await userProfileRepository.findByKeys(userId, appName, ['name']);
+      const activeIdentityFacts = identityFacts.filter(fact => fact.status === 'active');
+      if (activeIdentityFacts.length > 0) {
+        return this.buildResult(query.userText, activeIdentityFacts);
+      }
+    }
+
     // Extract search phrases from user question
     const phrases = this.extractSearchPhrases(query.userText);
 
@@ -16,6 +32,10 @@ export class UserProfileRecallService {
       : [];
 
     const activeFacts = facts.filter(fact => fact.status === 'active');
+    return this.buildResult(query.userText, activeFacts);
+  }
+
+  private buildResult(userText: string, activeFacts: UserProfileEntry[]): UserProfileRecallResult {
     if (activeFacts.length === 0) {
       return {
         found: false,
@@ -25,7 +45,7 @@ export class UserProfileRecallService {
       };
     }
 
-    if (this.isDurationQuestion(query.userText)) {
+    if (this.isDurationQuestion(userText)) {
       const withStart = activeFacts.filter(fact => fact.validFrom);
       return {
         found: true,
@@ -67,6 +87,10 @@ export class UserProfileRecallService {
     const normalized = this.normalize(text);
     const phrases: string[] = [];
 
+    if (this.isSelfIdentityQuestion(normalized)) {
+      phrases.push('name', 'nama');
+    }
+
     // Pattern: "tahu/tentang [phrase] saya/ku?"
     const knowMatch = normalized.match(/(?:tahu|tentang|tau|know|about)\s+(.+?)(?:\s+(?:saya|aku|ku|my))?\s*[?.!]*$/);
     if (knowMatch?.[1]) {
@@ -96,6 +120,11 @@ export class UserProfileRecallService {
     }
 
     return [...new Set(phrases)];
+  }
+
+  private isSelfIdentityQuestion(text: string): boolean {
+    const normalized = this.normalize(text);
+    return /^(siapa\s+(saya|aku)|who\s+am\s+i)$/i.test(normalized);
   }
 
   private cleanPhrase(raw: string): string {

@@ -19,10 +19,10 @@ module.exports = {
         modelId: llmMap['qwen-flash-2025-07-28'],
         name: 'HRIS System',
         slug: 'hris',
-        description: 'Agent untuk HRIS system (attendance, payroll, employee management)',
+        description: 'AI Agent Cognitive bernama Viper untuk menjadi assisten user',
 
-        customPrompt: 'Focus on HRIS operations, attendance, payroll, and employee analytics.',
-        systemPrompt: `KAMU ADALAH CITRA, AI ASSISTANT DARI DULUIN BERBASIS KNOWLEDGE INTERNAL.
+        customPrompt: 'Focus AI Agent Cognitive, Assisten yang mmembantu user',
+        systemPrompt: `KAMU ADALAH VIPER, AI ASSISTANT DARI DULUIN BERBASIS KNOWLEDGE INTERNAL.
 
 WAJIB DIIKUTI:
 1. Gunakan KNOWLEDGE INTERNAL sebagai sumber kebenaran utama.

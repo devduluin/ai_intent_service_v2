@@ -35,6 +35,7 @@ import {
 } from '../utils/text-intent-cleanup.util';
 
 import { buildCancelNoopVariants } from '../utils/cancel-noop-message.util';
+import { resolveDisplayName } from '../utils/user-display-name.util';
 
 
 import type { PipelineInput, PipelineResult } from '../types';
@@ -353,11 +354,19 @@ class PipelineService {
 
       if (userProfileService.isExplicitProfileStatement(input.text)) {
         const savedProfile = await userProfileService.extractAndUpsert(input);
-        return PipelineFormatter.buildEarly({
-          intent: 'user_profile_saved',
-          score: 1,
-          message: userProfileService.formatSavedMessage(savedProfile)
-        }, startTotal);
+        if (savedProfile.length > 0) {
+          return PipelineFormatter.buildEarly({
+            intent: 'user_profile_saved',
+            score: 1,
+            message: userProfileService.formatSavedMessage(savedProfile)
+          }, startTotal);
+        }
+
+        appLogger.debug('[Pipeline] Profile statement candidate produced no facts, continuing pipeline', {
+          userId: input.user_id,
+          appName: input.app_name,
+          text: input.text
+        });
       }
 
       if (clarificationState) {
@@ -1292,19 +1301,7 @@ class PipelineService {
       .length;
     const hasHistory = (input.chat_history || []).length > 0;
 
-    // Resolve name: user profile (highest confidence) > attributes fallback
-    let userName: string | undefined;
-    try {
-      const profile = await userProfileService.getContext(input.user_id, input.app_name);
-      if (profile?.identity?.name) {
-        userName = profile.identity.name;
-      }
-    } catch {
-      // Fallback to attributes
-    }
-    if (!userName) {
-      userName = (input.attributes as any)?.name || (input.attributes as any)?.params?.name;
-    }
+    const userName = await resolveDisplayName(input);
 
     return buildCancelNoopVariants({
       name: userName,

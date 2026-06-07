@@ -63,7 +63,7 @@ export function buildProfilePromptSection(profile?: UserProfileContext): string 
   const lines: string[] = [];
 
   // Identity
-  if (profile.identity?.name) lines.push(`- Nama: ${profile.identity.name}`);
+  if (profile.identity?.name) lines.push(`- Nama: ${profile.identity.name} (sumber utama; abaikan nama lain dari attributes/history jika berbeda)`);
   if (profile.identity?.role || profile.tenant?.role) {
     lines.push(`- Role: ${profile.identity?.role || profile.tenant?.role}`);
   }
@@ -135,17 +135,28 @@ export function buildIdentityPromptSection(userText?: string): string {
 
   if (!_identityCache) return '';
 
-  return '\n\nIDENTITAS KAMU (VIPER):\n' + _identityCache + '\n\nGunakan informasi di atas untuk menjawab pertanyaan user tentang identitas, arsitektur, desain, atau kemampuanmu. Jawab dengan natural dan personal.';
+  return '\n\nIDENTITAS KAMU :\n' + _identityCache + '\n\nGunakan informasi di atas untuk menjawab pertanyaan user tentang identitas, arsitektur, desain, atau kemampuanmu. Jawab dengan natural dan personal.';
 }
 
 function isIdentityQuestion(text: string): boolean {
-  const n = text.toLowerCase().replace(/\s+/g, ' ').trim();
+  const n = text
+    .toLowerCase()
+    .replace(/[\/_-]+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
   return (
-    /\b(siapa\s+(anda|kamu|ini)|who\s+(are|is)\s+(you|this)|what\s+are\s+you)\b/i.test(n) ||
-    /\b(bagaimana|gimana|how)\s+.+\s+(anda|kamu|you)\b/i.test(n) ||
-    /\b(jelaskan|jelasin|explain|describe|tell me about)\s+(dirimu|tentang kamu|tentang anda|arsitekturmu|yourself|your architecture)\b/i.test(n) ||
-    /\b(apakah\s+(anda|kamu)\s+(manusia|robot|ai|bot)|are\s+you\s+(human|real|a robot|ai|a bot))\b/i.test(n) ||
-    /^(siapa kamu|siapa anda|who are you|kenalan dong|introduce yourself|perkenalkan dirimu|ceritakan tentang dirimu)$/i.test(n)
+    /^(siapa|apa)\s+(anda|kamu|viper|ini)$/i.test(n) ||
+    /^(kamu|anda)\s+(itu|ini)?\s*(siapa|apa)$/i.test(n) ||
+    /^(who are you|what are you|who is this|what is this)$/i.test(n) ||
+    /^(apakah\s+)?(anda|kamu)\s+(manusia|robot|ai|bot|asli|program)$/i.test(n) ||
+    /^are you (human|real|a robot|ai|a bot)$/i.test(n) ||
+    /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(bekerja|kerja|didesain|dibangun|dibuat|berfungsi|arsitektur)$/i.test(n) ||
+    /^how (do you work|are you designed|are you built)$/i.test(n) ||
+    /^(jelaskan|jelasin|ceritakan)\s+(dirimu|tentang kamu|tentang anda|tentang viper|arsitekturmu|arsitektur anda)$/i.test(n) ||
+    /^(explain|describe|tell me about)\s+(yourself|your architecture)$/i.test(n) ||
+    /^(kenalan dong|introduce yourself|perkenalkan dirimu|ceritakan tentang dirimu)$/i.test(n)
   );
 }
 

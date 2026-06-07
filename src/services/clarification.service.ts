@@ -3,6 +3,7 @@ import { openAiService } from './openAi.service'
 import type { Intent, Tool, ToolParam, PipelineInput, ResourceMissingParams } from '../types'
 import type { Agent } from '../types/agent.types'
 import { config } from '../config'
+import { getDisplayNameFromInput, getFirstName } from '../utils/user-display-name.util'
 
 class ClarificationService {
 
@@ -74,8 +75,8 @@ class ClarificationService {
   }
 
   private getUserContext(input: PipelineInput): string {
-    const userName = input.attributes?.name as string ?? ''
-    const firstName = userName.split(' ')[0]
+    const userName = getDisplayNameFromInput(input)
+    const firstName = getFirstName(userName)
     return firstName ? `Nama pengguna: "${firstName}"` : ''
   }
 

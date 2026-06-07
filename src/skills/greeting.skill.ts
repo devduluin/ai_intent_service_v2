@@ -9,6 +9,7 @@ import type { ApiHandlerFn, InternalSkillMetadata, InternalSkillModule } from '.
 import { agentRepository } from '../repositories/agent.repository';
 import { intentRepository } from '../repositories/intent.repository';
 import { skillsRegistry } from '../services/skills-registry.service';
+import { getDisplayNameFromInput } from '../utils/user-display-name.util';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -138,7 +139,7 @@ interface GreetingSkillResponse {
 // ============================================================
 
 export const handleGreeting: ApiHandlerFn = async (params, context: PipelineInput) => {
-  const userName = (params?.name as string) || (context?.attributes?.name as string) || '';
+  const userName = (params?.name as string) || getDisplayNameFromInput(context);
   const language = (params?.language as string) || (context?.attributes?.language as string) || 'id';
   const showCapabilities =
     Boolean(params?.show_skills) ||
@@ -513,23 +514,35 @@ function detectGreetingInput(query: string): GreetingInputType {
     return 'farewell';
   }
 
-  // Identity questions — who are you, how do you work, what's your architecture
-  if (/\b(siapa\s+(anda|kamu|ini|lo|elu|gue|saya)|who\s+(are|is)\s+(you|this)|what\s+are\s+you|kamu\s+(itu|siapa|ini)|anda\s+(itu|siapa|ini))\b/i.test(normalized)) {
+  // Identity questions: only explicit questions about VIPER/the assistant.
+  // Do not catch broad operational questions such as "bagaimana jika saya tidak bisa absen".
+  if (
+    /^(siapa|apa)\s+(anda|kamu|viper|ini)$/i.test(normalized) ||
+    /^(kamu|anda)\s+(itu|ini)?\s*(siapa|apa)$/i.test(normalized) ||
+    /^(who are you|what are you|who is this|what is this)$/i.test(normalized) ||
+    /^(kenalan dong|introduce yourself|perkenalkan dirimu|ceritakan tentang dirimu|tell me about yourself)$/i.test(normalized)
+  ) {
     return 'identity_request';
   }
-  if (/\b(bagaimana|gimana|how)\s+(anda|kamu|lo|elu|you)\s+(didesain|dibangun|dibuat|bekerja|kerja|designed|built|made|work|function|arsitektur|architecture)\b/i.test(normalized)) {
+
+  if (
+    /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(didesain|dibangun|dibuat|bekerja|kerja|berfungsi|arsitektur)$/i.test(normalized) ||
+    /^how (do you work|are you designed|are you built)$/i.test(normalized)
+  ) {
     return 'identity_request';
   }
-  if (/\b(bagaimana|gimana|how)\s+.+\s+(anda|kamu|you)\b/i.test(normalized)) {
+
+  if (
+    /^(jelaskan|jelasin|ceritakan)\s+(dirimu|tentang kamu|tentang anda|tentang dirimu|tentang viper|arsitekturmu|arsitektur anda)$/i.test(normalized) ||
+    /^(explain|describe|tell me about)\s+(yourself|your architecture)$/i.test(normalized)
+  ) {
     return 'identity_request';
   }
-  if (/\b(jelaskan|jelasin|explain|describe|tell me about)\s+(dirimu|dirinya|tentang kamu|tentang anda|tentang dirimu|arsitekturmu|arsitektur anda|yourself|your architecture|how you)\b/i.test(normalized)) {
-    return 'identity_request';
-  }
-  if (/\b(apakah\s+(anda|kamu|lo|elu)\s+(manusia|robot|ai|bot|asli|nyata|program)|are\s+you\s+(human|real|a robot|ai|a bot))\b/i.test(normalized)) {
-    return 'identity_request';
-  }
-  if (/^(siapa kamu|siapa anda|who are you|what are you|kenalan dong|introduce yourself|perkenalkan dirimu|ceritakan tentang dirimu|tell me about yourself)$/i.test(normalized)) {
+
+  if (
+    /^(apakah\s+)?(anda|kamu)\s+(manusia|robot|ai|bot|asli|nyata|program)$/i.test(normalized) ||
+    /^are you (human|real|a robot|ai|a bot)$/i.test(normalized)
+  ) {
     return 'identity_request';
   }
   // Self-capability: "apa anda punya memory?", "apa isi memory anda?", "kamu bisa ingat?"

@@ -7,6 +7,7 @@ import { PipelineFormatter } from '../utils/pipeline-formatter.util';
 import { isExitModeText } from '../utils/text-intent-cleanup.util';
 import { calculateNextRunFromCron } from '../utils/cron.util';
 import { automationExplainService } from './automation/automation-explain.service';
+import { getDisplayNameFromInput } from '../utils/user-display-name.util';
 
 const TTL_MS = 5 * 60 * 1000;
 
@@ -76,7 +77,7 @@ class AutomationModeService {
 
   async handle(input: PipelineInput, startTotal: number): Promise<PipelineResult> {
     const text = input.text || '';
-    const userName = input.attributes?.name || '';
+    const userName = getDisplayNameFromInput(input);
 
     if (this.isExitIntent(text)) {
       await this.exit(input.user_id, input.app_name);

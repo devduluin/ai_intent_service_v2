@@ -17,6 +17,18 @@ export interface SkillSignal {
 }
 
 class SkillSignalService {
+  private readonly GENERIC_TRIGGER_WORDS = new Set([
+    'jelaskan',
+    'jelasin',
+    'detail',
+    'ringkas',
+    'rangkum',
+    'summary',
+    'summarize',
+    'lihat',
+    'tampilkan'
+  ]);
+
   detect(text: string): SkillSignal {
     const normalizedText = this.normalize(text);
     const candidates = skillsRegistry
@@ -59,6 +71,12 @@ class SkillSignalService {
     for (const trigger of skill.capabilities?.triggers || []) {
       const normalized = this.normalize(trigger);
       if (this.containsPhrase(normalizedText, normalized)) {
+        if (skill.capabilities?.requiresData && this.isGenericTrigger(normalized) && !this.hasDataAnalysisContext(normalizedText)) {
+          matchedBy.push('ignored_generic_trigger');
+          matchedText.push(trigger);
+          continue;
+        }
+
         score += 0.34;
         matchedBy.push('trigger');
         matchedText.push(trigger);
@@ -111,6 +129,13 @@ class SkillSignalService {
 
     if (score <= 0) return null;
 
+    if (skill.capabilities?.requiresData && !this.hasDataAnalysisContext(normalizedText)) {
+      const hasExplicitSkillName = matchedBy.includes('skill_name') || matchedBy.includes('skill_slug');
+      if (!hasExplicitSkillName) {
+        score = Math.min(score, 0.34);
+      }
+    }
+
     const priorityBoost = Math.max(0, (skill.capabilities?.priority || 5) - 5) * 0.02;
     const confidence = Math.min(1, score + priorityBoost);
 
@@ -137,6 +162,14 @@ class SkillSignalService {
     if (!normalizedText || !normalizedPhrase || normalizedPhrase.length < 3) return false;
     const pattern = new RegExp(`(^|\\s)${this.escapeRegex(normalizedPhrase)}(\\s|$)`, 'i');
     return pattern.test(normalizedText);
+  }
+
+  private isGenericTrigger(normalizedTrigger: string): boolean {
+    return this.GENERIC_TRIGGER_WORDS.has(normalizedTrigger);
+  }
+
+  private hasDataAnalysisContext(normalizedText: string): boolean {
+    return /\b(data|dataset|json|array|object|hasil|result|analisa|analisis|analysis|analyze|insight|trend|pola|metric|metrik|statistik|summary|ringkasan)\b/i.test(normalizedText);
   }
 
   private escapeRegex(value: string): string {

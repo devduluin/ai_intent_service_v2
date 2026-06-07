@@ -9,6 +9,12 @@ import { join } from 'path';
 import type { InternalSkillMetadata, InternalSkillModule, ApiHandlerFn } from '../types/internal-skill.types';
 import { appLogger } from '../utils/logger.util';
 
+export interface DiscoveredInternalSkill {
+  metadata: InternalSkillMetadata;
+  handler: ApiHandlerFn;
+  file: string;
+}
+
 // ============================================================
 // DISCOVERY FUNCTION
 // ============================================================
@@ -17,7 +23,7 @@ import { appLogger } from '../utils/logger.util';
  * Discover all skills from skills/ folder
  * Scans for *.skill.ts files and extracts metadata + handler
  */
-export async function discoverInternalSkills(): Promise<InternalSkillMetadata[]> {
+export async function discoverInternalSkillModules(): Promise<DiscoveredInternalSkill[]> {
   const skillsDir = join(__dirname);
   
   try {
@@ -28,11 +34,11 @@ export async function discoverInternalSkills(): Promise<InternalSkillMetadata[]>
       fileCount: files.length
     });
     
-    const skills: InternalSkillMetadata[] = [];
+    const skills: DiscoveredInternalSkill[] = [];
     
     for (const file of files) {
       // Skip non-skill files
-      if (!file.endsWith('.skill.ts') && !file.endsWith('.skill.js') || file.startsWith('index.') || file === 'discovery.js' || file === 'discovery.ts') {
+      if ((!file.endsWith('.skill.ts') && !file.endsWith('.skill.js')) || file.startsWith('index.') || file === 'discovery.js' || file === 'discovery.ts') {
         continue;
       }
       
@@ -47,7 +53,7 @@ export async function discoverInternalSkills(): Promise<InternalSkillMetadata[]>
         const handler = extractHandler(module);
         
         if (metadata && handler) {
-          skills.push(metadata);
+          skills.push({ metadata, handler, file });
           
           appLogger.info('[SkillsDiscovery] Discovered skill', {
             name: metadata.name,
@@ -73,7 +79,7 @@ export async function discoverInternalSkills(): Promise<InternalSkillMetadata[]>
     
     appLogger.info('[SkillsDiscovery] Discovery completed', {
       totalSkills: skills.length,
-      skills: skills.map(s => `${s.name} (${s.slug})`)
+      skills: skills.map(s => `${s.metadata.name} (${s.metadata.slug})`)
     });
     
     return skills;
@@ -85,6 +91,11 @@ export async function discoverInternalSkills(): Promise<InternalSkillMetadata[]>
     
     return [];
   }
+}
+
+export async function discoverInternalSkills(): Promise<InternalSkillMetadata[]> {
+  const modules = await discoverInternalSkillModules();
+  return modules.map(item => item.metadata);
 }
 
 // ============================================================

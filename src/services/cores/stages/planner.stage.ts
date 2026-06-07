@@ -152,6 +152,16 @@ export class PlannerStage {
     // PerceptionFrame-based skill routing (replaces tryOrchestrationSkillGate)
     const perceptionFrame = options?.perceptionFrame;
     if (perceptionFrame && perceptionFrame.confidence >= 0.65) {
+      if (perceptionFrame.type === 'assistant_feedback') {
+        appLogger.info('[PlannerStage] Assistant feedback routed to chat-only', {
+          userId: input.user_id,
+          appName: input.app_name,
+          query: input.text,
+          confidence: perceptionFrame.confidence
+        });
+        return this.buildChatOnlyPlan();
+      }
+
       const routedPlan = this.routePerceptionFrame(perceptionFrame, input, agent);
       if (routedPlan) {
         appLogger.info('[PlannerStage] Perception frame routed to resource', {
@@ -182,7 +192,7 @@ export class PlannerStage {
     }
 
     // Build candidate lists
-    const candidates = this.buildCandidates(matches, input, memoryContext, options?.perceptionFrame);
+    const candidates = this.buildCandidates(matches, input, memoryContext, options?.perceptionFrame, options?.skillSignal);
 
     const totalCandidates = 
       candidates.skills.length +
@@ -440,7 +450,13 @@ export class PlannerStage {
     options?: PlannerStageOptions
   ): Promise<PlannerOutput | null> {
     try {
-      if (this.isUserProfileQuestion(input.text)) {
+      const frameType = options?.perceptionFrame?.type;
+      const frameOwnsRoute = frameType === 'memory_question' ||
+        frameType === 'memory_task_replay' ||
+        frameType === 'automation_request' ||
+        frameType === 'offer_response';
+
+      if (!frameOwnsRoute && this.isUserProfileQuestion(input.text)) {
         return {
           mode: 'single_step',
           chat: false,
@@ -600,7 +616,8 @@ export class PlannerStage {
     matches: IntentMatch[],
     input: PipelineInput,
     memoryContext: ContextMemory | null,
-    perceptionFrame?: import('../../../types/perception.types').PerceptionFrame | null
+    perceptionFrame?: import('../../../types/perception.types').PerceptionFrame | null,
+    skillSignal?: SkillSignal
   ): {
     skills: SkillCandidate[];
     tools: ResourceCandidate[];
@@ -668,7 +685,7 @@ export class PlannerStage {
     const knowledgeIntents = matchedIntents.filter(m => m.knowledge && m.knowledge.length > 0);
 
     // ✅ SKILLS: Build from skillsRegistry (not from intent.handlerKey)
-    const skills = this.selectSkillCandidates();
+    const skills = this.selectSkillCandidates(skillSignal, perceptionFrame);
 
     const tools = toolIntents.flatMap(intent => {
       return (intent.tools || []).map((t: any) => {
@@ -757,12 +774,53 @@ export class PlannerStage {
     return [...new Map(candidates.map(c => [c.slug, c])).values()];
   }
 
-  private selectSkillCandidates(): SkillCandidate[] {
+  private selectSkillCandidates(
+    skillSignal?: SkillSignal,
+    perceptionFrame?: import('../../../types/perception.types').PerceptionFrame | null
+  ): SkillCandidate[] {
     const allSkills = skillsRegistry.getAllSkills({ includeHidden: false });
+    const selectedSlugs = new Set<string>();
 
-    // ✅ ALWAYS RETURN ALL SKILLS - Let LLM decide which to use
-    // This ensures skills are always available for planner
-    return allSkills.map(skill => ({
+    if (skillSignal?.recommendedSkill) {
+      selectedSlugs.add(skillSignal.recommendedSkill);
+    }
+
+    for (const candidate of skillSignal?.candidates?.slice(0, 3) || []) {
+      selectedSlugs.add(candidate.slug);
+    }
+
+    if (perceptionFrame && perceptionFrame.confidence >= 0.65) {
+      const frameSkill = this.resolveSkillForFrame(perceptionFrame.type);
+      if (frameSkill) selectedSlugs.add(frameSkill);
+
+      if (perceptionFrame.type === 'comparison') {
+        for (const skill of allSkills) {
+          const actionTypes = skill.capabilities?.actionTypes || [];
+          if (actionTypes.includes('compare') || actionTypes.includes('trend') || actionTypes.includes('analyze')) {
+            selectedSlugs.add(skill.slug);
+          }
+        }
+      }
+    }
+
+    if (selectedSlugs.size === 0) {
+      appLogger.debug('[PlannerStage] Skill candidates omitted: no perception/skill signal');
+      return [];
+    }
+
+    const selectedSkills = allSkills
+      .filter(skill => selectedSlugs.has(skill.slug))
+      .sort((a, b) => this.rankSelectedSkill(b, skillSignal, perceptionFrame) - this.rankSelectedSkill(a, skillSignal, perceptionFrame))
+      .slice(0, 3);
+
+    appLogger.debug('[PlannerStage] Skill candidates narrowed', {
+      selected: selectedSkills.map(skill => skill.slug),
+      skillSignal: skillSignal?.recommendedSkill,
+      perceptionFrame: perceptionFrame?.type
+    });
+
+    // Keep planner prompt small: only perception/skill-signal candidates reach the LLM.
+    return selectedSkills.map(skill => ({
       slug: skill.slug,
       name: skill.name,
       description: skill.description,
@@ -771,6 +829,34 @@ export class PlannerStage {
       tags: skill.tags,
       capabilities: skill.capabilities
     }));
+  }
+
+  private rankSelectedSkill(
+    skill: InternalSkillMetadata,
+    skillSignal?: SkillSignal,
+    perceptionFrame?: import('../../../types/perception.types').PerceptionFrame | null
+  ): number {
+    let score = 0;
+
+    if (skill.slug === skillSignal?.recommendedSkill) score += 100;
+
+    const signalCandidate = skillSignal?.candidates.find(candidate => candidate.slug === skill.slug);
+    if (signalCandidate) score += signalCandidate.confidence * 50;
+
+    if (perceptionFrame && perceptionFrame.confidence >= 0.65) {
+      const frameSkill = this.resolveSkillForFrame(perceptionFrame.type);
+      if (skill.slug === frameSkill) score += 80;
+
+      if (perceptionFrame.type === 'comparison') {
+        const actionTypes = skill.capabilities?.actionTypes || [];
+        if (actionTypes.includes('compare')) score += 30;
+        if (actionTypes.includes('trend')) score += 25;
+        if (actionTypes.includes('analyze')) score += 15;
+      }
+    }
+
+    score += (skill.capabilities?.priority || 5) * 0.5;
+    return score;
   }
 
   // ============================================================

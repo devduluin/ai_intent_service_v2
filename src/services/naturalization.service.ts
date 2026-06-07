@@ -35,6 +35,15 @@ class NaturalizationService {
     const start = Date.now()
     
     console.log(`[Naturalization] Agent: ${agent.llmModel?.modelCode}`)
+
+    const profileRecallResponse = this.tryNaturalizeUserProfileRecall(apiResult, input, contextCache);
+    if (profileRecallResponse) {
+      const adapted = emotionToneService.adaptShortMessage(profileRecallResponse, contextCache?.emotion);
+      console.log(`[Naturalization] User profile fast response time: ${Date.now() - start}ms`)
+      console.log(`[Naturalization] Final response : ${adapted}`)
+      return adapted;
+    }
+
     // Pilih service berdasarkan config.default.provider
     const provider = agent.llmModel?.provider || config.default?.provider || 'ollama'
 
@@ -319,6 +328,71 @@ ${this.formatApiResult(apiResult)}`.trim()
     return Object.values(obj).some((value: any) =>
       value && typeof value === 'object' && value.kind === 'user_profile_recall'
     );
+  }
+
+  private tryNaturalizeUserProfileRecall(
+    apiResult: unknown,
+    input: PipelineInput,
+    contextCache?: ContextCache
+  ): string | null {
+    const result = this.extractUserProfileRecall(apiResult);
+    if (!result) return null;
+
+    if (result.answerable === false || !Array.isArray(result.facts) || result.facts.length === 0) {
+      return 'Saya belum menemukan data itu di profil Anda. Kalau informasinya ingin disimpan, beri tahu saya dalam bentuk sederhana, misalnya "nama saya ...".';
+    }
+
+    const normalizedText = String(input.text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const facts = result.facts;
+    const nameFact = facts.find((fact: any) => fact?.key === 'name');
+
+    if (nameFact && /^(siapa\s+(saya|aku)|who\s+am\s+i)$/i.test(normalizedText)) {
+      return `Anda adalah ${nameFact.value}. Jika ada informasi lain yang ingin Anda cek, saya siap bantu.`;
+    }
+
+    if (facts.length === 1) {
+      const fact = facts[0] as any;
+      return `${this.profileFactLabel(fact)} Anda adalah ${fact.value}. Jika perlu informasi profil lain, saya siap bantu.`;
+    }
+
+    return [
+      'Saya menemukan beberapa data profil Anda:',
+      '',
+      ...facts.map((fact: any, index: number) => `${index + 1}. ${this.profileFactLabel(fact)}: ${fact.value}`),
+      '',
+      'Jika ada informasi lain yang ingin Anda cek, saya siap bantu.'
+    ].join('\n');
+  }
+
+  private extractUserProfileRecall(apiResult: unknown): any | null {
+    const obj = apiResult as any;
+    if (!obj || typeof obj !== 'object') return null;
+    if (obj.kind === 'user_profile_recall') return obj;
+
+    for (const value of Object.values(obj)) {
+      if (value && typeof value === 'object' && (value as any).kind === 'user_profile_recall') {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  private profileFactLabel(fact: any): string {
+    const key = String(fact?.key || '')
+      .replace(/^contact\./, '')
+      .replace(/^relationship\./, '')
+      .replace(/^preference\./, '')
+      .replace(/[._-]+/g, ' ')
+      .trim();
+
+    if (!key) return 'Data profil';
+
+    return key
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
   }
 
   private compactJson(value: unknown, maxLength: number): string {

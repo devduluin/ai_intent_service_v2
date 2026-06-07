@@ -18,6 +18,7 @@ export type PerceptionIntentType =
   | 'comparison'
   | 'offer_response'
   | 'small_talk'
+  | 'assistant_feedback'
   | 'unknown';
 
 // ============================================================

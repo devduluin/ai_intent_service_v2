@@ -29,6 +29,7 @@ import {
 } from './stages';
 import { OfferGenerationStage } from './stages/offer-generation.stage';
 import { skillSignalService } from '../skill-signal.service';
+import { perceptionDisambiguationService } from '../perception-disambiguation.service';
 import { memoryTaskReplayService } from '../memory-task-replay.service';
 import { emotionToneService } from '../emotion-tone.service';
 import { selfCorrectionRecoveryService } from '../self-correction-recovery.service';
@@ -303,6 +304,30 @@ export class PipelineCore {
         operations: perceptionFrame.operations,
         skipEmbedding: perceptionResult.skipEmbedding
       });
+
+      const disambiguationResult = await perceptionDisambiguationService.refine({
+        text: preprocessedText,
+        skillSignal: signals.skill,
+        perceptionFrame,
+        signals
+      });
+
+      if (disambiguationResult.skillSignal) {
+        signals.skill = disambiguationResult.skillSignal;
+      }
+
+      if (disambiguationResult.perceptionFrame) {
+        perceptionFrame = disambiguationResult.perceptionFrame;
+      }
+
+      if (disambiguationResult.usedLlm) {
+        appLogger.info('[PipelineCore] Perception disambiguation applied', {
+          selectedSkill: disambiguationResult.selectedSkill,
+          selectedFrameType: disambiguationResult.selectedFrameType,
+          confidence: disambiguationResult.confidence,
+          reason: disambiguationResult.reason
+        });
+      }
 
       // ============================================================
       // STAGE 2.6: MEMORY TASK REPLAY BRANCH (Option B)
@@ -837,15 +862,15 @@ export class PipelineCore {
         naturalResponse: guardedNaturalResponse,
         metadata: {
           totalTime: Date.now() - startTotal,
-          // executedTasks: executionResult.metrics.executedTasks,
-          // totalTasks: executionResult.metrics.totalTasks,
-          // executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
-          // activePlan: safePlan,
-          // resolvedParams: safeParams,
-          // activeOffer: selectedOffer,
+          executedTasks: executionResult.metrics.executedTasks,
+          totalTasks: executionResult.metrics.totalTasks,
+          executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
+          activePlan: safePlan,
+          resolvedParams: safeParams,
+          activeOffer: selectedOffer,
           // recovery: selfCorrectionResult?.recoveryContext,
           // recoveryTrace: selfCorrectionResult?.trace || [],
-          // blockedUnsafeSuccessClaim
+          blockedUnsafeSuccessClaim
         }
       };
 
@@ -1003,6 +1028,19 @@ export class PipelineCore {
 
       // C-002: Error Recovery - Memory fallback with proper error handling
       if (!matches || matches.length === 0) {
+        if (!this.hasOperationalSignalForFallback(signals)) {
+          appLogger.info('[PipelineCore] No matches and no operational signal, using general chat fallback', {
+            userId: input.user_id,
+            appName: input.app_name,
+            queryLength: queryForMatching.length
+          });
+
+          return {
+            matches: [this.buildGeneralChatMatch(input.text, 'non_operational_no_matches')],
+            source: 'general_chat_fallback'
+          };
+        }
+
         appLogger.warn('[PipelineCore] No intent matches found, building planner fallback candidates', {
           userId: input.user_id,
           appName: input.app_name,
@@ -1054,27 +1092,8 @@ export class PipelineCore {
           queryLength: queryForMatching.length
         });
 
-        // Create general chat intent match
-        const generalChatMatch: IntentMatch = {
-          intent: {
-            slug: 'general_chat',
-            name: 'General Chat',
-            description: 'General conversation fallback',
-            examples: [],
-            handlers: [],
-            tools: [],
-            enabled: true,
-            isFallback: true
-          } as any,
-          score: 1.0,  // High confidence for fallback
-          metadata: {
-            fallbackReason: 'no_intent_matches',
-            originalQuery: input.text
-          }
-        };
-
         return {
-          matches: [generalChatMatch],
+          matches: [this.buildGeneralChatMatch(input.text, 'no_intent_matches')],
           source: 'general_chat_fallback'
         };
       }
@@ -1549,6 +1568,40 @@ export class PipelineCore {
       asksForRealtimeData: signals.asksForRealtimeData,
       isQuestion: (signals as any).isQuestion || false,
       language: signals.language || 'id'
+    };
+  }
+
+  private hasOperationalSignalForFallback(signals: UserMessageSignals): boolean {
+    return Boolean(
+      signals.actionHints?.length ||
+      signals.formatHints?.length ||
+      signals.temporalHints?.length ||
+      signals.temporalDetails?.length ||
+      signals.entityHints?.length ||
+      signals.asksForFile ||
+      signals.asksForRealtimeData ||
+      signals.comparison?.isComparison ||
+      (signals as any).skill?.hasStrongSignal
+    );
+  }
+
+  private buildGeneralChatMatch(originalQuery: string, fallbackReason: string): IntentMatch {
+    return {
+      intent: {
+        slug: 'general_chat',
+        name: 'General Chat',
+        description: 'General conversation fallback',
+        examples: [],
+        handlers: [],
+        tools: [],
+        enabled: true,
+        isFallback: true
+      } as any,
+      score: 1.0,
+      metadata: {
+        fallbackReason,
+        originalQuery
+      }
     };
   }
 
