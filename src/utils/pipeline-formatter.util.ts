@@ -6,7 +6,7 @@ export class PipelineFormatter {
    * Membangun hasil untuk kasus awal/pre-execution
    */
   static buildEarly(
-    decision: { intent: string, score: number, message: string, apiResult?: unknown },
+    decision: { intent: string, score: number, message: string, apiResult?: unknown, metadata?: Partial<PipelineMetadata> },
     startTime: number
   ): PipelineResult {
     return {
@@ -14,7 +14,10 @@ export class PipelineFormatter {
       score: decision.score,
       apiResult: decision.apiResult ?? null,
       naturalResponse: decision.message,
-      metadata: this.getMetadata(startTime)
+      metadata: {
+        ...this.getMetadata(startTime),
+        ...(decision.metadata || {})
+      }
     };
   }
 

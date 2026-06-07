@@ -33,6 +33,11 @@ export interface ActiveOffer {
     key: string;
     paramsPatch?: Record<string, unknown>;
     clearParams?: string[];
+    promptForParam?: {
+      name: string;
+      label?: string;
+      question: string;
+    };
     inheritParams?: boolean;
     dependsOnLastResult?: boolean;
   };

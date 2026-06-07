@@ -20,10 +20,10 @@ import { join } from 'path';
 export const greetingSkill: InternalSkillMetadata = {
   name: 'Greeting',
   slug: 'greeting',
-  description: 'Sapaan, ucapan terimakasih, identitas viper (ai system), tentang VIPER (system) ,dan daftar kemampuan dimiliki',
+  description: 'Digunakan untuk sapaan, ucapan terimakasih, tentang atau identitas saat user tanya siapa anda, dan daftar kemampuan dimiliki',
   handlerKey: 'handleGreeting',
   version: '1.0.0',
-  tags: ['greeting', 'welcome', 'about', 'viper', 'capability'],
+  tags: ['welcome', 'tentang', 'viper', 'capability', 'kemampuan', 'perkenalan', 'identity', 'self-awareness'],
   category: 'utilities',
   isHidden: false,
   capabilities: {
@@ -33,6 +33,11 @@ export const greetingSkill: InternalSkillMetadata = {
       'siapa anda',
       'siapa kamu',
       'who are you',
+      'identitas viper',
+      'tentang viper',
+      'arsitektur viper',
+      'identitas anda',
+      'identitas kamu',
       'perkenalkan',
       'introduce',
       'tampilkan',
@@ -481,9 +486,13 @@ function getFollowUpPrompts(language: string): string[] {
   ];
 }
 
-function detectGreetingInput(query: string): GreetingInputType {
+export function detectGreetingInput(query: string): GreetingInputType {
   const normalized = normalizeText(query);
   if (!normalized) return 'greeting';
+
+  if (matchesIdentityMetadataTrigger(normalized)) {
+    return 'identity_request';
+  }
 
   if (matchesCapabilityTrigger(normalized)) {
     return 'capability_request';
@@ -529,8 +538,7 @@ function detectGreetingInput(query: string): GreetingInputType {
   }
 
   if (
-    /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(didesain|dibangun|dibuat|bekerja|kerja|berfungsi|arsitektur|berpikir|berfikir)$/i.test(normalized) ||
-    /^bagaimana\s+cara\s+(anda|kamu|viper)\s+(berpikir|berfikir|bekerja|work|think|reason)$/i.test(normalized) ||
+    /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(didesain|dibangun|dibuat|bekerja|kerja|berfungsi|arsitektur)$/i.test(normalized) ||
     /^how (do you work|are you designed|are you built)$/i.test(normalized)
   ) {
     return 'identity_request';
@@ -566,6 +574,29 @@ function detectGreetingInput(query: string): GreetingInputType {
   }
 
   return 'unknown';
+}
+
+function matchesIdentityMetadataTrigger(normalizedQuery: string): boolean {
+  const phrases = [
+    ...(greetingSkill.capabilities?.triggers || []),
+    ...(greetingSkill.tags || []),
+    ...(greetingSkill.capabilities?.context || [])
+  ]
+    .map(phrase => normalizeText(phrase))
+    .filter(isIdentityMetadataPhrase);
+
+  return phrases.some(phrase => containsNormalizedPhrase(normalizedQuery, phrase));
+}
+
+function isIdentityMetadataPhrase(phrase: string): boolean {
+  if (!phrase) return false;
+  return /\b(siapa anda|siapa kamu|who are you|identitas|identity|tentang viper|arsitektur viper|yourself|architecture|perkenalkan|introduce)\b/i.test(phrase);
+}
+
+function containsNormalizedPhrase(text: string, phrase: string): boolean {
+  if (!text || !phrase || phrase.length < 3) return false;
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|\\s)${escaped}(\\s|$)`, 'i').test(text);
 }
 
 function matchesCapabilityTrigger(normalizedQuery: string): boolean {

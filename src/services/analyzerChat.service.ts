@@ -75,6 +75,9 @@ PENTING:
 - Jangan mengarang data yang tidak ada
 - Jika data tidak cukup, katakan dengan jelas di summary
 - Prioritaskan insight yang paling berdampak
+- Rekomendasi harus berhubungan langsung dengan data dan workflow VIPER yang sedang berjalan.
+- Jangan menyarankan tool eksternal seperti Python, pandas, Google Sheets API, script otomatis, atau integrasi pihak ketiga kecuali user secara eksplisit meminta solusi teknis eksternal.
+- Jika user sudah memakai fitur internal seperti export Excel, analisis, reminder, atau automation, arahkan rekomendasi ke langkah operasional internal, misalnya validasi data, cek periode lain, bandingkan periode, buat reminder/automation, atau lanjutkan export internal.
 - Gunakan bahasa Indonesia yang baik dan profesional
 `;
 

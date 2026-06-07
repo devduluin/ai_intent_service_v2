@@ -44,6 +44,20 @@ export class OfferResolver {
       };
     }
 
+    if (offer.target.promptForParam) {
+      return {
+        isOfferResponse: true,
+        accepted: true,
+        offer,
+        shouldExecute: false,
+        plan: this.buildPlanFromOffer(offer),
+        params: {
+          ...(workingMemory?.activeEntities || {})
+        },
+        message: offer.target.promptForParam.question
+      };
+    }
+
     const params = {
       ...(workingMemory?.activeEntities || {})
     };

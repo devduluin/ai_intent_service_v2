@@ -31,6 +31,7 @@ class OfferGenerationService {
     const candidates: ActiveOffer[] = [];
 
     candidates.push(...await this.buildSameToolParamOffers(context));
+    candidates.push(...await this.buildStringParamPromptOffers(context));
     candidates.push(...this.buildGreetingCapabilityOffer(context));
     candidates.push(...this.buildMemoryRecallRerunOffer(context));
     candidates.push(...this.buildAnalyzeOffer(context));
@@ -62,31 +63,43 @@ class OfferGenerationService {
     if (!tool) return [];
 
     const params = toolService.getToolParams(tool);
-    const statusParam = params.find(param => param.name === 'status');
-    if (!statusParam) return [];
+    const optionParams = params.filter(param =>
+      !param.isHidden &&
+      !this.isUnsafeOfferParam(param.name) &&
+      ['select', 'multiselect'].includes(param.type) &&
+      Array.isArray(param.config?.options) &&
+      param.config.options.length > 0
+    );
 
-    const currentStatus = String(context.params.status || '').toLowerCase();
-    const targetStatus = summaryDimensions.find(value => value !== currentStatus);
-    if (!targetStatus) return [];
+    for (const param of optionParams) {
+      const currentValue = String(context.params[param.name] || '').toLowerCase();
+      const targetOption = param.config?.options?.find(option => {
+        const value = String(option.value || '').toLowerCase();
+        return value !== currentValue && summaryDimensions.includes(value);
+      });
 
-    if (!PipelineValidator.validateParamValue(statusParam, targetStatus)) {
-      return [];
+      if (!targetOption || !PipelineValidator.validateParamValue(param, targetOption.value)) {
+        continue;
+      }
+
+      const label = param.label || param.name;
+      return [
+        this.createOffer({
+          type: 'refine_param',
+          label: `Lihat ${label} ${targetOption.label || targetOption.value}`,
+          suggestedText: `Mau saya tampilkan data dengan ${label} ${targetOption.label || targetOption.value}?`,
+          reason: `Result memiliki dimensi ${summaryDimensions.join(', ')} dan tool mendukung pilihan ${param.name}.`,
+          sourceTask: toolTask,
+          targetResource: 'tool',
+          targetKey: toolTask.key,
+          paramsPatch: { [param.name]: targetOption.value },
+          clearParams: ['search'],
+          confidence: 0.84
+        })
+      ];
     }
 
-    return [
-      this.createOffer({
-        type: 'refine_param',
-        label: `Lihat data status ${targetStatus}`,
-        suggestedText: `Mau saya tampilkan data dengan status ${targetStatus}?`,
-        reason: `Result memiliki summary status ${summaryDimensions.join(', ')} dan tool mendukung filter status.`,
-        sourceTask: toolTask,
-        targetResource: 'tool',
-        targetKey: toolTask.key,
-        paramsPatch: { status: targetStatus },
-        clearParams: ['search'],
-        confidence: 0.84
-      })
-    ];
+    return [];
   }
 
   private buildAnalyzeOffer(context: OfferGenerationContext): ActiveOffer[] {
@@ -110,6 +123,54 @@ class OfferGenerationService {
         confidence: 0.80
       })
     ];
+  }
+
+  private async buildStringParamPromptOffers(context: OfferGenerationContext): Promise<ActiveOffer[]> {
+    const toolTask = this.getPrimaryToolTask(context.plan);
+    if (!toolTask) return [];
+
+    const result = context.results[toolTask.key];
+    if (this.isErrorResult(result) || this.detectEmptyResult(result)) return [];
+
+    const tools = await toolService.getToolsBySlugs([toolTask.key]);
+    const tool = tools[0];
+    if (!tool) return [];
+
+    const params = toolService.getToolParams(tool);
+    const param = params.find(candidate =>
+      !candidate.isHidden &&
+      !this.isUnsafeOfferParam(candidate.name) &&
+      ['string', 'text'].includes(candidate.type) &&
+      !context.params[candidate.name] &&
+      this.isSearchLikeParam(candidate.name, candidate.label)
+    );
+
+    if (!param) return [];
+
+    const label = param.label || param.name;
+    return [
+      this.createOffer({
+        type: 'refine_param',
+        label: `Cari berdasarkan ${label}`,
+        suggestedText: `Mau cari berdasarkan ${label}?`,
+        reason: `Tool mendukung filter teks ${param.name}, tetapi nilainya harus diisi user.`,
+        sourceTask: toolTask,
+        targetResource: 'tool',
+        targetKey: toolTask.key,
+        clearParams: [param.name],
+        promptForParam: {
+          name: param.name,
+          label,
+          question: `Silakan masukkan ${label} yang ingin dicari.`
+        },
+        confidence: 0.72
+      })
+    ];
+  }
+
+  private isSearchLikeParam(name: string, label?: string): boolean {
+    const normalized = `${name} ${label || ''}`.toLowerCase();
+    return /\b(search|keyword|query|name|nama|employee|driver|plate|phone)\b/.test(normalized);
   }
 
   private buildExportOffer(context: OfferGenerationContext): ActiveOffer[] {
@@ -245,6 +306,7 @@ class OfferGenerationService {
     targetKey: string;
     paramsPatch?: Record<string, unknown>;
     clearParams?: string[];
+    promptForParam?: ActiveOffer['target']['promptForParam'];
     confidence: number;
   }): ActiveOffer {
     const now = Date.now();
@@ -266,6 +328,7 @@ class OfferGenerationService {
         key: input.targetKey,
         paramsPatch: input.paramsPatch,
         clearParams: input.clearParams,
+        promptForParam: input.promptForParam,
         inheritParams: true,
         dependsOnLastResult: input.targetResource === 'skill'
       },
@@ -447,6 +510,11 @@ class OfferGenerationService {
 
   private isErrorResult(result: unknown): boolean {
     return !!result && typeof result === 'object' && 'error' in (result as Record<string, unknown>);
+  }
+
+  private isUnsafeOfferParam(name: string): boolean {
+    const normalized = String(name || '').toLowerCase();
+    return normalized === 'id' || normalized.endsWith('_id') || normalized.includes('password') || normalized.includes('token');
   }
 }
 

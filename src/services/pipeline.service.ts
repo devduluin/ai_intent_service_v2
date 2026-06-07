@@ -1252,6 +1252,12 @@ class PipelineService {
         offerResolution.offer!,
         startTotal
       );
+    } else if (offerResolution.accepted && !offerResolution.shouldExecute && offerResolution.message) {
+      return PipelineFormatter.buildEarly({
+        intent: 'active_offer',
+        score: offerResolution.offer?.confidence || 1,
+        message: offerResolution.message
+      }, startTotal);
     } else {
       await workingMemoryService.updateActiveOfferStatus(input.user_id, input.app_name, 'rejected');
     }

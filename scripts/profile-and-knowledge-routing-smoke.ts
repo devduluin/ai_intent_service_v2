@@ -4,7 +4,9 @@ import { PerceptionStage } from '../src/services/cores/stages/perception.stage';
 import { skillSignalService } from '../src/services/skill-signal.service';
 import { skillsRegistry } from '../src/services/skills-registry.service';
 import { dataAnalyzerSkill } from '../src/skills/data_analyzer.skill';
+import { greetingSkill } from '../src/skills/greeting.skill';
 import { buildIdentityPromptSection } from '../src/utils/general-chat-guard.util';
+import { PlannerStage } from '../src/services/cores/stages/planner.stage';
 
 function buildDecomposition(text: string) {
   const actionHints = /\b(jelaskan|jelasin|explain)\b/i.test(text) ? ['jelaskan'] : [];
@@ -29,6 +31,7 @@ function buildDecomposition(text: string) {
 
 async function main() {
   skillsRegistry.registerSkill(dataAnalyzerSkill, async () => ({}));
+  skillsRegistry.registerSkill(greetingSkill, async () => ({}));
 
   assert.equal(
     isPotentialDynamicProfileStatementText('saya tidak bisa absen'),
@@ -52,6 +55,17 @@ async function main() {
   assert.equal(signal.recommendedSkill, undefined);
   assert.equal(signal.hasStrongSignal, false);
 
+  const identitySignal = skillSignalService.detect('siapa anda');
+  assert.equal(identitySignal.hasStrongSignal, true);
+  assert.equal(identitySignal.recommendedSkill, 'greeting');
+
+  const genericDisplaySignal = skillSignalService.detect('tampilkan');
+  assert.equal(
+    genericDisplaySignal.hasStrongSignal,
+    false,
+    'generic display trigger must not become a strong greeting route'
+  );
+
   assert.equal(
     buildIdentityPromptSection('jelaskan apa itu workin'),
     '',
@@ -69,9 +83,67 @@ async function main() {
   assert.equal(identityResult.skipEmbedding, true);
   assert.match(
     buildIdentityPromptSection('siapa kamu'),
-    /IDENTITAS KAMU \(VIPER\)/,
+    /IDENTITAS KAMU/,
     'explicit assistant identity question should inject VIPER identity prompt'
   );
+
+  const viperIdentityResult = await perception.execute({
+    text: 'identitas viper',
+    decomposition: buildDecomposition('identitas viper'),
+    workingMemory: null,
+    episodicMemory: null
+  });
+
+  assert.equal(viperIdentityResult.frame.type, 'small_talk');
+  assert.equal(viperIdentityResult.skipEmbedding, true);
+  assert.match(
+    buildIdentityPromptSection('identitas viper'),
+    /IDENTITAS KAMU/,
+    'metadata identity phrase should inject VIPER identity prompt'
+  );
+
+  const noisyIdentityDecomposition = buildDecomposition('Siapa kamu');
+  noisyIdentityDecomposition.signals.actionHints = ['siapa'];
+  const noisyIdentityResult = await perception.execute({
+    text: 'Siapa kamu',
+    decomposition: noisyIdentityDecomposition,
+    workingMemory: null,
+    episodicMemory: null
+  });
+
+  assert.equal(
+    noisyIdentityResult.frame.type,
+    'small_talk',
+    'identity question must survive noisy decomposition actionHints'
+  );
+  assert.equal(noisyIdentityResult.skipEmbedding, true);
+
+  const planner = new PlannerStage();
+  const greetingPlan = await planner.execute(
+    [],
+    {
+      user_id: 'identity_smoke_user',
+      app_name: 'hris',
+      text: 'Siapa anda',
+      attributes: {}
+    } as any,
+    { id: 'agent_smoke', slug: 'hris', name: 'HRIS' } as any,
+    {
+      usePlan: true,
+      perceptionFrame: {
+        type: 'small_talk',
+        operations: ['clarify'],
+        confidence: 0.92,
+        reasoning: ['identity metadata matched']
+      }
+    },
+    null as any
+  );
+
+  assert.equal(greetingPlan.chat, false);
+  assert.equal(greetingPlan.tasks[0]?.resource, 'skill');
+  assert.equal(greetingPlan.tasks[0]?.key, 'greeting');
+  assert.equal(greetingPlan.needsClarification, undefined);
 
   console.log('[Profile and Knowledge Routing Smoke] All checks passed');
   process.exit(0);

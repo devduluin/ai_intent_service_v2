@@ -60,6 +60,7 @@ interface ResourceCandidate {
   description: string;
   intentSlug: string;
   intentName: string;
+  priority?: number;
 }
 
 // ============================================================
@@ -116,13 +117,6 @@ export class PlannerStage {
     );
 
     const hasMatches = matches && matches.length > 0;
-
-    // const recentUsage = await episodicMemoryService.getToolUsageHints(
-    //   input.user_id,
-    //   input.app_name
-    // );
-
-    // const hasRecentUsage = recentUsage && (recentUsage.tasks?.length > 0);
 
     // ============================================================
     // PRE-PLANNER GATE: Early greeting/small talk detection
@@ -182,7 +176,7 @@ export class PlannerStage {
     }
 
     // Build candidate lists
-    const candidates = this.buildCandidates(matches, input, memoryContext, options?.perceptionFrame);
+    const candidates = this.buildCandidates(matches, input, memoryContext, options?.perceptionFrame, options?.skillSignal);
 
     const totalCandidates = 
       candidates.skills.length +
@@ -417,22 +411,6 @@ export class PlannerStage {
 
   /**
    * Pre-planner gate: Detect early greetings/small talk
-   * 
-   * ⚠️ ONLY RUNS IF NO PENDING SLOT/CONFIRMATION
-   * 
-   * Returns PlannerOutput if greeting detected (skill:greeting, chat:false)
-   * Returns null if not greeting (continue to normal planner flow)
-   * 
-   * Excluded queries:
-   * - Time queries ("jam berapa", "what time") = use tool/skill
-   * - Context queries ("siapa", "siapa nama") = use tool/skill
-   * - Action-oriented queries ("cek", "buat", "analisis") = use planner
-   * - Yes/No answers = use confirmationDetector for pending slots
-   * 
-   * Key safeguards:
-   * - Short sentences only (max 15 words)
-   * - No action keywords
-   * - Pattern-based or structure-based detection
    */
   private async prePlannerGate(
     input: PipelineInput,
@@ -453,6 +431,11 @@ export class PlannerStage {
             ambiguityReasons: ['user_profile_question_gate']
           }
         };
+      }
+
+      const signalOnlyPlan = this.buildPrePlannerStrongSkillPlan(options?.skillSignal);
+      if (signalOnlyPlan) {
+        return signalOnlyPlan;
       }
 
       // Detect if this is a greeting
@@ -504,6 +487,55 @@ export class PlannerStage {
     }
 	  }
 
+    private buildPrePlannerStrongSkillPlan(skillSignal?: SkillSignal): PlannerOutput | null {
+      if (!skillSignal?.hasStrongSignal || !skillSignal.recommendedSkill) {
+        return null;
+      }
+
+      const skillMetadata = skillsRegistry.getSkillBySlug(skillSignal.recommendedSkill);
+      if (!skillMetadata) return null;
+
+      if (this.skillRequiresData(skillSignal.recommendedSkill)) {
+        return null;
+      }
+
+      if (this.isStatefulSkillForDirectTask({
+        slug: skillMetadata.slug,
+        name: skillMetadata.name,
+        description: skillMetadata.description,
+        handlerKey: skillMetadata.handlerKey,
+        category: skillMetadata.category,
+        tags: skillMetadata.tags,
+        capabilities: skillMetadata.capabilities
+      })) {
+        return null;
+      }
+
+      const candidate = skillSignal.candidates.find(item => item.slug === skillSignal.recommendedSkill);
+      const confidence = Math.max(candidate?.confidence ?? 0.8, 0.8);
+
+      return {
+        mode: 'single_step',
+        chat: false,
+        tasks: [
+          {
+            id: '1',
+            resource: 'skill',
+            key: skillSignal.recommendedSkill,
+            depends_on: [],
+            confidence
+          }
+        ],
+        reasoning: `Pre-planner strong skill signal: ${skillSignal.recommendedSkill}`,
+        confidence,
+        meta: {
+          preFilterConfidence: confidence,
+          postFilterConfidence: confidence,
+          ambiguityReasons: candidate?.matchedBy || ['strong_skill_signal']
+        }
+      };
+    }
+
 	  private buildPlanFromStrongSkillSignal(
 	    skillSignal: SkillSignal | undefined,
 	    candidates: {
@@ -554,40 +586,20 @@ export class PlannerStage {
 	    const context = skill.capabilities.context || [];
 	    const category = skill.category || '';
 
-	    return category === 'automation' ||
-	      actionTypes.includes('automation') ||
+	    return actionTypes.includes('automation') ||
 	      actionTypes.includes('schedule') ||
 	      actionTypes.includes('monitor') ||
+	      context.includes('automation_management') ||
 	      context.includes('future_task') ||
 	      context.includes('scheduled_workflow') ||
 	      context.includes('conditional_alert');
 	  }
 
-  private normalizeForGate(value: string): string {
-    return String(value || '')
-      .toLowerCase()
-      .replace(/[\/_-]+/g, ' ')
-      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
   private isUserProfileQuestion(text: string): boolean {
     return isUserProfileQuestionText(text);
   }
 
-  private containsGatePhrase(normalizedText: string, normalizedPhrase: string): boolean {
-    if (!normalizedText || !normalizedPhrase || normalizedPhrase.length < 3) return false;
-    const pattern = new RegExp(`(^|\\s)${this.escapeRegex(normalizedPhrase)}(\\s|$)`, 'i');
-    return pattern.test(normalizedText);
-  }
-
-  private escapeRegex(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-
-	  // ============================================================
+	// ============================================================
   // Candidate Building
   // ============================================================
 
@@ -598,7 +610,8 @@ export class PlannerStage {
     matches: IntentMatch[],
     input: PipelineInput,
     memoryContext: ContextMemory | null,
-    perceptionFrame?: import('../../../types/perception.types').PerceptionFrame | null
+    perceptionFrame?: import('../../../types/perception.types').PerceptionFrame | null,
+    skillSignal?: SkillSignal
   ): {
     skills: SkillCandidate[];
     tools: ResourceCandidate[];
@@ -676,7 +689,8 @@ export class PlannerStage {
           name: toolData.name,
           description: toolData.description,
           intentSlug: intent.slug,
-          intentName: intent.name
+          intentName: intent.name,
+          priority: t.priority
         };
       });
     });
@@ -689,7 +703,8 @@ export class PlannerStage {
           name: knowledgeData.title || knowledgeData.slug,
           description: knowledgeData.description || knowledgeData.title || knowledgeData.slug,
           intentSlug: intent.slug,
-          intentName: intent.name
+          intentName: intent.name,
+          priority: k.priority
         };
       });
     });
@@ -698,6 +713,7 @@ export class PlannerStage {
     const uniqueTools = this.deduplicateBySlug(tools);
     const uniqueKnowledge = this.deduplicateBySlug(knowledge);
     const uniqueSkills = skills; // Already deduplicated from selectSkillCandidates
+    let filteredKnowledge = uniqueKnowledge;
 
     appLogger.debug('PlannerStage: Intent candidates', {
       skills: uniqueSkills.map(s => s.slug),
@@ -717,17 +733,32 @@ export class PlannerStage {
 
       switch (perceptionFrame.type) {
         case 'direct_task':
-          // Direct task: remove orchestration skills, focus on tools
-          // filteredSkills = uniqueSkills.filter(
-          //   s => !ORCHESTRATION_CATEGORIES.has(s.category || '') &&
-          //        !ORCHESTRATION_SLUGS.has(s.slug)
-          // );
-          // if (filteredSkills.length < uniqueSkills.length) {
-          //   appLogger.debug('[PlannerStage] Cognitive: filtered orchestration skills for direct_task', {
-          //     before: uniqueSkills.map(s => s.slug),
-          //     after: filteredSkills.map(s => s.slug)
-          //   });
-          // }
+          if (!skillSignal?.hasStrongSignal) {
+            filteredSkills = uniqueSkills.filter(skill => !this.isStatefulSkillForDirectTask(skill));
+            if (filteredSkills.length < uniqueSkills.length) {
+              appLogger.debug('[PlannerStage] Cognitive: filtered stateful skills for direct_task', {
+                before: uniqueSkills.map(s => s.slug),
+                after: filteredSkills.map(s => s.slug)
+              });
+            }
+          }
+          if (uniqueTools.length === 0 && uniqueKnowledge.length > 1 && this.isKnowledgeQuestion(input.text)) {
+            filteredSkills = [];
+            const preferredProductKnowledge = this.preferredProductKnowledge(input.text, uniqueKnowledge);
+            filteredKnowledge = preferredProductKnowledge
+              ? [preferredProductKnowledge]
+              : [...uniqueKnowledge]
+                .sort((a, b) => {
+                  const priorityDelta = (a.priority ?? 999) - (b.priority ?? 999);
+                  if (priorityDelta !== 0) return priorityDelta;
+                  return a.slug.localeCompare(b.slug);
+                })
+                .slice(0, 1);
+            appLogger.debug('[PlannerStage] Cognitive: narrowed knowledge candidates for knowledge question', {
+              query: input.text,
+              selectedKnowledge: filteredKnowledge.map(item => item.slug)
+            });
+          }
           break;
 
         case 'comparison':
@@ -747,7 +778,7 @@ export class PlannerStage {
     return {
       skills: filteredSkills,
       tools: uniqueTools,
-      knowledge: uniqueKnowledge
+      knowledge: filteredKnowledge
     };
   }
 
@@ -769,6 +800,34 @@ export class PlannerStage {
       tags: skill.tags,
       capabilities: skill.capabilities
     }));
+  }
+
+  private isStatefulSkillForDirectTask(skill: SkillCandidate): boolean {
+    if (skill.slug === 'greeting') return true;
+    if (skill.slug === 'memory_recall') return true;
+    if (skill.slug === 'user_profile_recall') return true;
+
+    const context = skill.capabilities?.context || [];
+    const actionTypes = skill.capabilities?.actionTypes || [];
+
+    return skill.slug === 'automation_manager' ||
+      skill.category === 'memory' ||
+      actionTypes.includes('automation') ||
+      actionTypes.includes('schedule') ||
+      actionTypes.includes('monitor') ||
+      context.includes('automation_management') ||
+      context.includes('future_task') ||
+      context.includes('scheduled_workflow') ||
+      context.includes('conditional_alert');
+  }
+
+  private isKnowledgeQuestion(text: string): boolean {
+    return /\b(apa itu|jelaskan|jelasin|panduan|cara|tutorial|faq|help|bantuan|troubleshooting|what is|how to)\b/i.test(text);
+  }
+
+  private preferredProductKnowledge(text: string, knowledge: ResourceCandidate[]): ResourceCandidate | null {
+    if (!/\bworkin\b/i.test(text)) return null;
+    return knowledge.find(item => item.slug === 'attendance_faq') || null;
   }
 
   // ============================================================
@@ -1161,7 +1220,6 @@ export class PlannerStage {
 
   /**
    * ✅ Build clarification question
-   * ✅ ISSUE #6: Dynamic descriptions from repositories
    */
   private async buildClarificationQuestion(
     filteredTasks: PlannerTask[],
@@ -1181,7 +1239,6 @@ export class PlannerStage {
 
   /**
    * ✅ Get task description dynamically from repositories
-   * ✅ ISSUE #6: No more hardcoded descriptions
    */
   private async getTaskDescription(task: PlannerTask): Promise<string> {
     try {
@@ -1275,8 +1332,9 @@ export class PlannerStage {
       };
     }
 
-    // ✅ Apply confidence re-ranking
-    const repairedPlan = this.repairDataSkillDependencies(plan);
+    // ✅ Apply planner output repair before confidence re-ranking
+    const resourceRepairedPlan = this.repairResourceMismatch(plan, candidates);
+    const repairedPlan = this.repairDataSkillDependencies(resourceRepairedPlan);
     if (repairedPlan !== plan) {
       appLogger.info('[PlannerStage] Data skill dependencies repaired', {
         originalMode: plan.mode,
@@ -1312,6 +1370,66 @@ export class PlannerStage {
       meta: {
         ...repairedPlan.meta,
         ...reRankedResult.meta
+      }
+    };
+  }
+
+  private repairResourceMismatch(
+    plan: PlannerOutput,
+    candidates: {
+      skills: SkillCandidate[];
+      tools: ResourceCandidate[];
+      knowledge: ResourceCandidate[];
+    }
+  ): PlannerOutput {
+    if (!plan.tasks || plan.tasks.length === 0) return plan;
+
+    const skillKeys = new Set(candidates.skills.map(item => item.slug));
+    const toolKeys = new Set(candidates.tools.map(item => item.slug));
+    const knowledgeKeys = new Set(candidates.knowledge.map(item => item.slug));
+
+    let repaired = false;
+    const tasks = plan.tasks.map(task => {
+      if (task.resource === 'tool' && !toolKeys.has(task.key) && skillKeys.has(task.key)) {
+        repaired = true;
+        return { ...task, resource: 'skill' as const };
+      }
+
+      if (task.resource === 'skill' && !skillKeys.has(task.key) && toolKeys.has(task.key)) {
+        repaired = true;
+        return { ...task, resource: 'tool' as const };
+      }
+
+      if (task.resource === 'knowledge' && !knowledgeKeys.has(task.key)) {
+        if (toolKeys.has(task.key)) {
+          repaired = true;
+          return { ...task, resource: 'tool' as const };
+        }
+        if (skillKeys.has(task.key)) {
+          repaired = true;
+          return { ...task, resource: 'skill' as const };
+        }
+      }
+
+      return task;
+    });
+
+    if (!repaired) return plan;
+
+    appLogger.info('[PlannerStage] Planner resource mismatch repaired', {
+      tasks: tasks.map(task => ({
+        id: task.id,
+        resource: task.resource,
+        key: task.key
+      }))
+    });
+
+    return {
+      ...plan,
+      tasks,
+      meta: {
+        ...plan.meta,
+        repaired: true
       }
     };
   }

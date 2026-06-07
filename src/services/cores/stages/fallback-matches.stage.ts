@@ -24,17 +24,31 @@ export class FallbackMatchesStage {
     const maxMatches = input.options?.maxMatches ?? DEFAULT_MAX_MATCHES;
     const score = input.options?.score ?? DEFAULT_FALLBACK_SCORE;
 
-    const candidates = (input.intents || [])
+    const ranked = (input.intents || [])
       .filter(intent => this.isUsableIntent(intent, input.agent))
-      .sort((a, b) => this.rankIntent(b, input.signals) - this.rankIntent(a, input.signals))
-      .slice(0, maxMatches)
       .map(intent => ({
         intent,
-        score,
+        rank: this.rankIntent(intent, input.signals, input.userText),
+        lexicalScore: this.lexicalOverlapScore(intent, input.userText)
+      }))
+      .sort((a, b) => b.rank - a.rank);
+
+    const hasStrongLexicalMatch = ranked.some(item => item.lexicalScore >= 0.35);
+    const selected = (hasStrongLexicalMatch
+      ? ranked.filter(item => item.lexicalScore >= 0.25).slice(0, Math.min(maxMatches, 6))
+      : ranked.slice(0, maxMatches));
+
+    const candidates = selected
+      .slice(0, maxMatches)
+      .map(item => ({
+        intent: item.intent,
+        score: Math.min(0.95, score + (item.lexicalScore >= 0.35 ? 0.1 : 0)),
         metadata: {
           fallbackReason: 'vector_no_matches',
           originalQuery: input.userText,
-          source: 'planner_candidate_fallback'
+          source: 'planner_candidate_fallback',
+          lexicalScore: item.lexicalScore,
+          rank: item.rank
         }
       }));
 
@@ -60,7 +74,7 @@ export class FallbackMatchesStage {
     return toolCount > 0 || knowledgeCount > 0;
   }
 
-  private rankIntent(intent: Intent, signals: UserMessageSignals): number {
+  private rankIntent(intent: Intent, signals: UserMessageSignals, userText: string): number {
     let rank = 0;
 
     if (intent.tools?.length) rank += 10;
@@ -82,15 +96,51 @@ export class FallbackMatchesStage {
       if (hasTemporalParam) rank += 4;
     }
 
+    const lexicalScore = this.lexicalOverlapScore(intent, userText);
+    if (lexicalScore > 0) {
+      rank += lexicalScore * 12;
+      if (lexicalScore >= 0.35) rank += 8;
+    }
+
     return rank;
   }
 
+  private lexicalOverlapScore(intent: Intent, userText: string): number {
+    const queryTokens = this.tokenize(userText);
+    if (queryTokens.length === 0) return 0;
+
+    const intentTokens = new Set(this.tokenize(this.intentText(intent)));
+    if (intentTokens.size === 0) return 0;
+
+    const matched = queryTokens.filter(token => intentTokens.has(token));
+    return matched.length / queryTokens.length;
+  }
+
+  private tokenize(text: string): string[] {
+    const stopwords = new Set([
+      'apa', 'itu', 'ini', 'yang', 'dan', 'atau', 'saya', 'anda', 'kamu',
+      'jelaskan', 'bagaimana', 'jika', 'kalau', 'tidak', 'bisa', 'mohon',
+      'tolong', 'please', 'what', 'is', 'the', 'my', 'your', 'me'
+    ]);
+
+    return String(text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9_@\.\-\s]/g, ' ')
+      .split(/\s+/)
+      .map(token => token.trim())
+      .filter(token => token.length >= 3 && !stopwords.has(token));
+  }
+
   private intentText(intent: Intent): string {
+    const examples = (intent.examples || []).map((example: any) =>
+      typeof example === 'string' ? example : String(example?.text || '')
+    );
+
     return [
       intent.slug,
       intent.name,
       intent.description,
-      ...(intent.examples || [])
+      ...examples
     ].filter(Boolean).join(' ');
   }
 }

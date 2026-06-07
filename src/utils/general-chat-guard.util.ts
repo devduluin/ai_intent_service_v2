@@ -148,6 +148,9 @@ function isIdentityQuestion(text: string): boolean {
 
   return (
     /^(siapa|apa)\s+(anda|kamu|viper|ini)$/i.test(n) ||
+    /^(identitas|identity)\s+(viper|anda|kamu)$/i.test(n) ||
+    /^(tentang|about)\s+viper$/i.test(n) ||
+    /^arsitektur\s+viper$/i.test(n) ||
     /^(kamu|anda)\s+(itu|ini)?\s*(siapa|apa)$/i.test(n) ||
     /^(who are you|what are you|who is this|what is this)$/i.test(n) ||
     /^(apakah\s+)?(anda|kamu)\s+(manusia|robot|ai|bot|asli|program)$/i.test(n) ||
@@ -160,4 +163,3 @@ function isIdentityQuestion(text: string): boolean {
     /^(kenalan dong|introduce yourself|perkenalkan dirimu|ceritakan tentang dirimu)$/i.test(n)
   );
 }
-

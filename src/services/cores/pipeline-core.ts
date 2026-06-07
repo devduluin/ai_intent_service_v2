@@ -318,6 +318,15 @@ export class PipelineCore {
 
       if (disambiguationResult.perceptionFrame) {
         perceptionFrame = disambiguationResult.perceptionFrame;
+        perceptionResult = {
+          ...perceptionResult,
+          frame: perceptionFrame,
+          skipEmbedding: perceptionResult.skipEmbedding ||
+            (
+              perceptionFrame.confidence >= 0.85 &&
+              ['small_talk', 'memory_question', 'memory_task_replay', 'automation_request'].includes(perceptionFrame.type)
+            )
+        };
       }
 
       if (disambiguationResult.usedLlm) {
@@ -840,8 +849,8 @@ export class PipelineCore {
       // ============================================================
       // BUILD RESULT
       // ============================================================
-      const intentLabel = finalVectorHints[0]?.intent.slug || 'unknown';
-      const intentScore = finalVectorHints[0]?.score ?? 0;
+      const intentLabel = finalVectorHints[0]?.intent.slug || this.inferIntentLabelFromPlan(safePlan) || 'unknown';
+      const intentScore = finalVectorHints[0]?.score ?? safePlan.tasks?.[0]?.confidence ?? 0;
 
       // Log if intent is unknown for debugging
       if (intentLabel === 'unknown' || intentScore === 0) {
@@ -862,15 +871,15 @@ export class PipelineCore {
         naturalResponse: guardedNaturalResponse,
         metadata: {
           totalTime: Date.now() - startTotal,
-          // executedTasks: executionResult.metrics.executedTasks,
-          // totalTasks: executionResult.metrics.totalTasks,
-          // executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
-          // activePlan: safePlan,
-          // resolvedParams: safeParams,
-          // activeOffer: selectedOffer,
-          // recovery: selfCorrectionResult?.recoveryContext,
-          // recoveryTrace: selfCorrectionResult?.trace || [],
-          // blockedUnsafeSuccessClaim
+          executedTasks: executionResult.metrics.executedTasks,
+          totalTasks: executionResult.metrics.totalTasks,
+          executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
+          activePlan: safePlan,
+          resolvedParams: safeParams,
+          activeOffer: selectedOffer,
+          recovery: selfCorrectionResult?.recoveryContext,
+          recoveryTrace: selfCorrectionResult?.trace || [],
+          blockedUnsafeSuccessClaim
         }
       };
 
@@ -1545,6 +1554,23 @@ export class PipelineCore {
     }
 
     return params;
+  }
+
+  private inferIntentLabelFromPlan(plan: PlannerOutput | null | undefined): string | null {
+    const firstTask = plan?.tasks?.[0];
+    if (!firstTask?.key) {
+      return null;
+    }
+
+    if (firstTask.resource === 'skill') {
+      return firstTask.key;
+    }
+
+    if (firstTask.resource === 'tool') {
+      return firstTask.key;
+    }
+
+    return null;
   }
 
   private normalizeSignals(signals: UserMessageSignals): {

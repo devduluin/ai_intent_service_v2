@@ -153,23 +153,65 @@ function detectSmallTalk(text: string): PerceptionFrame | null {
     };
   }
 
-  // Identity/self-awareness questions — route to greeting skill for VIPER-IDENTITY.md
-  if (isSelfIdentityQuestion(text)) {
+  const identityMatch = detectGreetingIdentitySignal(text);
+  if (identityMatch.matched) {
     return {
       type: 'small_talk',
       operations: ['clarify'],
-      confidence: 0.85,
-      reasoning: ['Identity question detected — routing to greeting skill for self-awareness']
+      confidence: identityMatch.confidence,
+      reasoning: identityMatch.reasons
     };
   }
 
   return null;
 }
 
+function detectGreetingIdentitySignal(text: string): { matched: boolean; confidence: number; reasons: string[] } {
+  const reasons: string[] = [];
+  const n = normalizeForMatch(text);
+  if (!n) return { matched: false, confidence: 0, reasons };
+
+  const greetingSkill = skillsRegistry.getSkillBySlug('greeting');
+  if (greetingSkill) {
+    const metadataPhrases = [
+      ...(greetingSkill.capabilities?.triggers || []),
+      ...(greetingSkill.tags || []),
+      ...(greetingSkill.capabilities?.context || [])
+    ];
+
+    const matchedPhrases = metadataPhrases
+      .map(phrase => normalizeForMatch(phrase))
+      .filter(phrase => isIdentityMetadataPhrase(phrase) && containsPhrase(n, phrase));
+
+    if (matchedPhrases.length > 0) {
+      reasons.push(`Greeting identity metadata matched: ${[...new Set(matchedPhrases)].slice(0, 3).join(', ')}`);
+    }
+  }
+
+  if (reasons.length === 0 && isSelfIdentityQuestion(n)) {
+    reasons.push('Universal assistant identity fallback matched');
+  }
+
+  if (reasons.length === 0) return { matched: false, confidence: 0, reasons };
+
+  return {
+    matched: true,
+    confidence: reasons.some(reason => reason.includes('metadata')) ? 0.92 : 0.88,
+    reasons
+  };
+}
+
+function isIdentityMetadataPhrase(phrase: string): boolean {
+  if (!phrase) return false;
+  return /\b(identitas|identity|siapa anda|siapa kamu|who are you|tentang viper|arsitektur viper|yourself|architecture|perkenalkan|introduce)\b/i.test(phrase);
+}
+
 function isSelfIdentityQuestion(text: string): boolean {
   const n = normalizeForMatch(text);
   if (!n) return false;
 
+  // Minimal universal fallback for assistant identity.
+  // Product/skill-specific identity phrases must live in skill metadata.
   return (
     /^(siapa|apa)\s+(anda|kamu|viper|ini)$/i.test(n) ||
     /^(kamu|anda)\s+(itu|ini)?\s*(siapa|apa)$/i.test(n) ||
@@ -245,6 +287,23 @@ function hasOperationalSignal(text: string, signals: UserMessageSignals): boolea
       signals.temporalDetails?.length ||
       signals.entityHints?.length
     ))
+  );
+}
+
+function shouldUseEarlySmallTalk(
+  _text: string,
+  _signals: UserMessageSignals,
+  _frame: PerceptionFrame
+): boolean {
+  // Small-talk is intentionally handled as a fallback candidate so resource
+  // routing has the first chance to interpret enterprise commands.
+  return false;
+}
+
+function isIdentitySmallTalkFrame(frame: PerceptionFrame | null | undefined): boolean {
+  if (!frame || frame.type !== 'small_talk') return false;
+  return frame.reasoning.some(reason =>
+    /identity|identitas|siapa|who are you|metadata/i.test(reason)
   );
 }
 
@@ -446,8 +505,14 @@ function detectAutomationRequest(text: string): PerceptionFrame | null {
   // Get automation triggers from automation_manager skill at runtime
   const automationTriggers = getSkillTriggers('automation_manager');
   const matchedAutomation = automationTriggers.filter(t => containsPhrase(normalized, normalizeForMatch(t)));
+  const genericAutomationTriggers = new Set(['kalau', 'jika', 'if', 'when', 'setiap']);
+  const specificAutomationMatches = matchedAutomation.filter(trigger =>
+    !genericAutomationTriggers.has(normalizeForMatch(trigger))
+  );
+  const hasExplicitAutomationType = /\b(automation|automasi|reminder|pengingat|conditional alert|scheduled workflow|workflow terjadwal)\b/i.test(normalized);
 
   if (matchedAutomation.length === 0) return null;
+  if (specificAutomationMatches.length === 0 && !hasExplicitAutomationType) return null;
 
   // Determine automation kind from text patterns
   // Order: conditional first (kalau/jika/pantau/monitor), then scheduled, then reminder (default)
@@ -550,13 +615,13 @@ export class PerceptionStage {
 
     // ---- 1. Small Talk ----
     const smallTalkFrame = detectSmallTalk(text);
-    if (smallTalkFrame && smallTalkFrame.confidence >= 0.6 && !hasOperationalSignal(text, signals)) {
+    if (smallTalkFrame && shouldUseEarlySmallTalk(text, signals, smallTalkFrame)) {
       appLogger.debug('[PerceptionStage] → small_talk', { confidence: smallTalkFrame.confidence });
       return {
         frame: { ...smallTalkFrame, temporalScope: extractTemporalScope(signals), emotion },
         skipEmbedding: true  // small_talk always skips embedding
       };
-    } else if (smallTalkFrame) {
+    } else if (smallTalkFrame && hasOperationalSignal(text, signals)) {
       appLogger.debug('[PerceptionStage] Small talk signal ignored because query has operational signals', {
         confidence: smallTalkFrame.confidence,
         actionHints: signals.actionHints?.length || 0,
@@ -637,7 +702,20 @@ export class PerceptionStage {
       })
     }
 
-    // 8. Direct Task (fallback, only if nothing else matched)
+    // 8. Small Talk / Identity fallback
+    if (
+      smallTalkFrame &&
+      smallTalkFrame.confidence >= 0.6 &&
+      (!hasOperationalSignal(text, signals) || isIdentitySmallTalkFrame(smallTalkFrame))
+    ) {
+      candidates.push({
+        frame: { ...smallTalkFrame, temporalScope: extractTemporalScope(signals), emotion },
+        priority: 1,
+        skipEmbedding: true
+      });
+    }
+
+    // 9. Direct Task (fallback, only if nothing else matched)
     if (candidates.length === 0) {
       appLogger.debug('[PerceptionStage] → direct_task (default)')
       return {

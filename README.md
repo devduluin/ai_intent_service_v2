@@ -1,15 +1,16 @@
-# VIPER V3.7.1 - Modular AI Intent Pipeline Engine
+# VIPER V3.7.2 - Modular AI Intent Pipeline Engine
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-blue)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.7.1-orange)](package.json)
+[![Version](https://img.shields.io/badge/Version-3.7.2-orange)](package.json)
 
 ## 📋 Daftar Isi
 
 - [Deskripsi Singkat](#deskripsi-singkat)
 - [What's New in V3.7](#whats-new-in-v37)
 - [What's New in V3.7.1](#whats-new-in-v371)
+- [What's New in V3.7.2](#whats-new-in-v372)
 - [Perception Stage](#-perception-stage--intent-frame-detection-new-v371)
 - [Memory Task Replay](#-memory-task-replay--recall--select--execute-new-v371)
 - [Standalone Comparison](#-standalone-comparison-stage-updated-v371)
@@ -60,6 +61,85 @@
 - **Pipeline Collision Guards**: Pending, confirmation, god mode, offer, continuation, greeting, dan memory recall diprioritaskan secara eksplisit
 
 VIPER (Vector Intent Pipeline Execution Resolution) memberikan pengalaman conversational AI yang natural, contextual, dan efisien. Fokus V3.7 adalah menjaga konteks percakapan tetap executable: follow-up, offer, clarification, memory recall, automation, god-mode command, dan comparison diproses sebagai flow eksplisit, bukan fallback chat bebas.
+
+---
+
+## ✨ What's New in V3.7.2
+
+### Perception Disambiguation & Safer Routing
+
+VIPER sekarang memakai lapisan disambiguasi sebelum planner agar sinyal deterministic tidak langsung mengunci route yang salah.
+
+```text
+User: apa yang saya tanyakan hari ini
+-> perception: memory_question
+-> planner receives memory_recall candidate
+
+User: apa email saya
+-> perception/profile gate
+-> user_profile_recall
+
+User: jelaskan apa itu workin
+-> direct_task / knowledge route
+-> tidak masuk greeting atau user_profile
+```
+
+Perubahan penting:
+
+- `PerceptionDisambiguationService` memvalidasi kandidat perception/skill signal sebelum planner.
+- Skill prompt ke planner dibatasi ke top candidates dari perception/skill signal agar prompt tidak membengkak.
+- Generic trigger seperti `jelaskan`, `lihat`, `tampilkan` tidak lagi otomatis memilih data skill yang `requiresData`.
+- Jika vector match kosong, planner masih bisa jalan dengan fallback capability candidates, bukan langsung general chat.
+
+### Identity & Greeting Routing
+
+Pertanyaan identitas VIPER sekarang lebih ketat dan membaca metadata `greeting` skill.
+
+```text
+User: siapa kamu
+-> greeting skill identity response
+
+User: identitas viper
+-> greeting skill identity response
+
+User: bagaimana jika saya tidak bisa absen
+-> bukan identity
+-> masuk planner/knowledge/tool
+```
+
+Rule utama:
+
+- Identity hanya untuk pertanyaan eksplisit tentang VIPER/asisten.
+- Frasa identity berasal dari metadata skill (`triggers`, `tags`, `context`) agar lebih scalable.
+- Broad regex seperti `bagaimana ... anda` tidak dipakai untuk memaksa identity route.
+
+### User Profile Integration
+
+User profile sekarang menjadi bagian dari memory operasional:
+
+- Statement extraction dapat menyimpan fakta profil dari chat biasa dan `/me`.
+- Recall memakai `user_profile_recall` untuk pertanyaan seperti `siapa saya`, `apa email saya`, dan `company_id saya apa`.
+- `ParamResolutionService` dapat mengambil nilai dari user profile tanpa mapping manual per field.
+- `/me` menampilkan profil dalam tabel dengan nomor index, key, class, source, dan confidence.
+- Field teknis seperti `company_id` tidak disisipkan ke general chat kecuali user bertanya eksplisit.
+
+### Emotional Tone & Self-Correction
+
+VIPER V3.7.2 mulai memakai behavioral layer untuk respons yang lebih manusiawi:
+
+- `emotionToneService` menyesuaikan respons pendek seperti profile recall, cancel noop, dan feedback user.
+- `assistant_feedback` perception menangkap input seperti `singkat sekali jawaban anda` dan tidak lagi salah memilih tool.
+- Self-correction recovery menangani fallback saat planner/slot/automation pretest gagal.
+- General chat guard tidak boleh berpura-pura mengeksekusi aksi seperti hapus/simpan/batalkan.
+
+### Active Offer & Clarification Guard
+
+Active offer dan clarification dibuat lebih aman:
+
+- Offer hanya dieksekusi jika user benar-benar menerima offer (`ya`, `iya`, `ya tampilkan`, `lihat`).
+- Query baru yang mengabaikan offer akan lanjut ke pipeline utama.
+- Bare `ya` tidak lagi dianggap CUD save jika tidak ada pending confirmation.
+- Identity/greeting route langsung dieksekusi sebagai skill agar tidak jatuh ke planner clarification loop.
 
 ---
 

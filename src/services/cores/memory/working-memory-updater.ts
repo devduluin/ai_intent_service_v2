@@ -165,6 +165,7 @@ export class WorkingMemoryUpdater {
           results: context.apiResults,
           params: context.params || {},
           type: 'full_pipeline',
+          plan: context.plan || null,
           planMode: context.plan?.mode || 'single_step'
         }
       }

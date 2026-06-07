@@ -3,6 +3,7 @@ import { pipelineService } from '../services/pipeline.service'
 import { intentRepository } from '../repositories/intent.repository'
 import { agentRepository } from '../repositories/agent.repository'
 import type { IntentRequest, IntentResponse } from '../types'
+import { sanitizePublicMetadata } from '../utils/public-response.util'
 
 class IntentController {
   async handleIntent(
@@ -17,7 +18,7 @@ class IntentController {
         response: result.naturalResponse,
         intent: result.intent,
         confidence: Math.round(result.score * 100) / 100,
-        metadata: result.metadata,
+        metadata: sanitizePublicMetadata(result.metadata),
       })
     } catch (err: any) {
       // error khusus pipeline (business error)

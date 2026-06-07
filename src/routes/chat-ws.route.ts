@@ -11,6 +11,7 @@ import { pipelineService } from '../services/pipeline.service';
 import { appLogger } from '../utils/logger.util';
 import { schedulerNotificationService } from '../services/automation/scheduler-notification.service';
 import { godModeManagerService } from '../services/god-mode-manager.service';
+import { sanitizePublicMetadata } from '../utils/public-response.util';
 
 // ============================================================
 // Types
@@ -222,7 +223,7 @@ export async function chatWsRoute(fastify: FastifyInstance): Promise<void> {
         response: (result as any).response || result.naturalResponse,
         intent: result.intent,
         confidence: (result as any).confidence || 0,
-        metadata: result.metadata
+        metadata: sanitizePublicMetadata(result.metadata)
       });
     } catch (error) {
       appLogger.error('[ChatWS] HTTP fallback error', {
@@ -453,11 +454,7 @@ async function handleChatMessage(
       response: (result as any).response || result.naturalResponse,
       intent: result.intent,
       confidence: (result as any).confidence || 0,
-      metadata: {
-        ...result.metadata,
-        responseTime,
-        via: 'websocket'
-      },
+      metadata: sanitizePublicMetadata(result.metadata),
       timestamp: Date.now()
     });
 

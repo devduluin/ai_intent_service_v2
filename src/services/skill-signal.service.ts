@@ -77,8 +77,12 @@ class SkillSignalService {
           continue;
         }
 
-        score += 0.34;
-        matchedBy.push('trigger');
+        const exactTrigger = normalizedText === normalized;
+        const highSignalTrigger = this.isHighSignalTrigger(normalized);
+        const specificPhraseTrigger = this.isSpecificPhraseTrigger(normalized);
+        const triggerScore = (exactTrigger && highSignalTrigger) || specificPhraseTrigger ? 0.74 : 0.34;
+        score += triggerScore;
+        matchedBy.push(triggerScore >= 0.74 ? 'trigger_high_signal' : 'trigger');
         matchedText.push(trigger);
       }
     }
@@ -166,6 +170,15 @@ class SkillSignalService {
 
   private isGenericTrigger(normalizedTrigger: string): boolean {
     return this.GENERIC_TRIGGER_WORDS.has(normalizedTrigger);
+  }
+
+  private isHighSignalTrigger(normalizedTrigger: string): boolean {
+    return /\b(siapa anda|siapa kamu|who are you|identitas|identity|tentang viper|arsitektur viper|kamu bisa apa|bisa bantu apa|what can you do|show capabilities|lihat kemampuan|kemampuan lengkap)\b/i.test(normalizedTrigger);
+  }
+
+  private isSpecificPhraseTrigger(normalizedTrigger: string): boolean {
+    if (this.isGenericTrigger(normalizedTrigger)) return false;
+    return normalizedTrigger.split(/\s+/).length >= 3;
   }
 
   private hasDataAnalysisContext(normalizedText: string): boolean {

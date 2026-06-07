@@ -2,6 +2,7 @@ import { ContinuationResolver, type ContinuationResult, type ContinuationIntent 
 import { WorkingMemoryUpdater } from '../memory/working-memory-updater';
 import { ExecutionStage } from './execution.stage';
 import { NaturalizationStage } from './naturalization.stage';
+import { OfferGenerationStage } from './offer-generation.stage';
 import { PipelineMetricsService } from '../metrics/pipeline-metrics.service';
 import { PipelineFormatter } from '../../../utils/pipeline-formatter.util';
 import { type Agent } from '../../../types/agent.types';
@@ -23,6 +24,7 @@ import type { ToolParam } from '../../../types';
 import { clarificationService } from '../../clarification.service';
 import { comparisonOrchestratorService } from '../../comparison-orchestrator.service';
 import { skillsRegistry } from '../../skills-registry.service';
+import { workingMemoryService } from '../../workingMemory.service';
 
 // ============================================================
 // Types
@@ -253,7 +255,11 @@ export class ContinuationStage {
           input,
           agent,
           startTotal,
-          activeIntent
+          activeIntent,
+          {
+            intent,
+            activePlan: context.workingMemory?.activePlan || undefined
+          }
         );
       }
 
@@ -1599,16 +1605,28 @@ export class ContinuationStage {
     };
 
     const executionStage = new ExecutionStage();
+    const skillParams = this.buildDirectSkillParams(skillKey, cachedData, input);
     const apiResults = await executionStage.execute(
       skillPlan,
       input,
-      cachedData,
+      skillParams,
       {
         cacheResults: false,  // ✅ FIX 1: Don't overwrite tool cache!
         userId: input.user_id,
         appName: input.app_name
       }
     );
+
+    const selectedOffer = await this.generateContinuationOffer({
+      input,
+      skillKey,
+      skillPlan,
+      activePlan: options?.activePlan,
+      skillParams,
+      cachedData,
+      apiResults: apiResults.results,
+      workingMemory: options?.intent ? undefined : null
+    });
 
     // Update working memory
     const workingMemoryUpdater = new WorkingMemoryUpdater();
@@ -1641,7 +1659,10 @@ export class ContinuationStage {
       
       // Return formatted time message directly
       const timezone = input.attributes?.timezone || 'lokasi';
-      const naturalResponse = `Waktu di ${timezone}: ${timeData.date_time || timeData.time || 'tidak tersedia'}`;
+      const naturalResponse = this.appendOfferText(
+        `Waktu di ${timezone}: ${timeData.date_time || timeData.time || 'tidak tersedia'}`,
+        selectedOffer
+      );
       
       // Update episodic memory
       const messages = ConversationUtil.buildMessages(input, {
@@ -1665,7 +1686,8 @@ export class ContinuationStage {
           intent: activeIntent,
           score: 1,
           message: naturalResponse,
-          apiResult: apiResults.results
+          apiResult: apiResults.results,
+          metadata: selectedOffer ? { activeOffer: selectedOffer } : undefined
         },
         startTotal
       );
@@ -1686,7 +1708,10 @@ export class ContinuationStage {
       });
 
       const analysis = dataAnalyzerResult.analysis;
-      naturalResponse = this.formatStructuredAnalysis(analysis);
+      naturalResponse = this.appendOfferText(
+        this.formatStructuredAnalysis(analysis),
+        selectedOffer
+      );
 
     } else {
       // Unstructured data - use LLM naturalization
@@ -1700,16 +1725,19 @@ export class ContinuationStage {
         input,
         agent,
         {
-          contextCache: options?.intent
-            ? {
-              continuationType: options.intent.type,
-              entities: options.resolvedParams,
-              previousToolResults: options.sourceToolKey
-                ? { [options.sourceToolKey]: options.sourceToolResult }
-                : undefined,
-              originalQuery: input.text
-            }
-            : undefined
+          contextCache: {
+            ...(options?.intent
+              ? {
+                continuationType: options.intent.type,
+                entities: options.resolvedParams,
+                previousToolResults: options.sourceToolKey
+                  ? { [options.sourceToolKey]: options.sourceToolResult }
+                  : undefined
+              }
+              : {}),
+            originalQuery: input.text,
+            allowedOffer: this.buildAllowedOfferForNaturalization(selectedOffer)
+          }
         }
       );
     }
@@ -1742,10 +1770,131 @@ export class ContinuationStage {
         intent: activeIntent,
         score: 1,
         message: naturalResponse,
-        apiResult: apiResults.results
+        apiResult: apiResults.results,
+        metadata: selectedOffer ? { activeOffer: selectedOffer } : undefined
       },
       startTotal
     );
+  }
+
+  private buildAllowedOfferForNaturalization(selectedOffer: Awaited<ReturnType<ContinuationStage['generateContinuationOffer']>>) {
+    if (!selectedOffer) {
+      return undefined;
+    }
+
+    return {
+      label: selectedOffer.label,
+      reason: selectedOffer.reason,
+      suggestedText: selectedOffer.suggestedText || selectedOffer.label
+    };
+  }
+
+  private appendOfferText(message: string, selectedOffer: Awaited<ReturnType<ContinuationStage['generateContinuationOffer']>>): string {
+    if (!selectedOffer?.suggestedText) {
+      return message;
+    }
+
+    const trimmed = String(message || '').trim();
+    if (!trimmed) {
+      return selectedOffer.suggestedText;
+    }
+
+    if (trimmed.includes(selectedOffer.suggestedText)) {
+      return trimmed;
+    }
+
+    return `${trimmed}\n\n${selectedOffer.suggestedText}`;
+  }
+
+  private async generateContinuationOffer(input: {
+    input: PipelineInput;
+    skillKey: string;
+    skillPlan: PlannerOutput;
+    activePlan?: PlannerOutput;
+    skillParams: Record<string, unknown>;
+    cachedData: Record<string, unknown>;
+    apiResults: Record<string, unknown>;
+    workingMemory?: WorkingMemoryData | null;
+  }) {
+    try {
+      const offerStage = new OfferGenerationStage();
+      const plan = this.buildOfferPlanForContinuation(input.activePlan, input.skillPlan, input.skillKey);
+      const results = this.buildOfferResultsForContinuation(plan, input.cachedData, input.apiResults);
+
+      const offerResult = await offerStage.execute({
+        input: input.input,
+        plan,
+        params: input.skillParams,
+        results,
+        executedTasks: plan.tasks.map(task => ({
+          key: task.key,
+          resource: task.resource
+        })) as any,
+        workingMemory: input.workingMemory
+      });
+
+      const selectedOffer = offerResult.selectedOffer;
+      if (!selectedOffer) {
+        return null;
+      }
+
+      if (selectedOffer.target.resource === 'skill' && selectedOffer.target.key === input.skillKey) {
+        return null;
+      }
+
+      await workingMemoryService.setActiveOffer(
+        input.input.user_id,
+        input.input.app_name,
+        selectedOffer
+      );
+
+      return selectedOffer;
+    } catch (error) {
+      appLogger.warn('[ContinuationStage] Continuation offer generation skipped', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return null;
+    }
+  }
+
+  private buildOfferPlanForContinuation(
+    activePlan: PlannerOutput | undefined,
+    skillPlan: PlannerOutput,
+    skillKey: string
+  ): PlannerOutput {
+    const toolTasks = (activePlan?.tasks || []).filter(task => task.resource === 'tool');
+    const skillTask = skillPlan.tasks[0];
+
+    return {
+      mode: toolTasks.length > 0 ? 'multi_step' : 'single_step',
+      chat: false,
+      tasks: [
+        ...toolTasks,
+        ...(skillTask?.key && skillTask.key !== skillKey ? [skillTask] : []),
+        ...(skillTask?.key === skillKey ? [skillTask] : [])
+      ]
+    };
+  }
+
+  private buildOfferResultsForContinuation(
+    plan: PlannerOutput,
+    cachedData: Record<string, unknown>,
+    apiResults: Record<string, unknown>
+  ): Record<string, unknown> {
+    const results: Record<string, unknown> = {};
+
+    for (const task of plan.tasks) {
+      if (task.resource === 'tool' && cachedData[task.key] !== undefined) {
+        results[task.key] = cachedData[task.key];
+      } else if (apiResults[task.key] !== undefined) {
+        results[task.key] = apiResults[task.key];
+      }
+    }
+
+    return {
+      ...results,
+      ...apiResults
+    };
   }
 
   /**
@@ -1879,6 +2028,41 @@ export class ContinuationStage {
     appLogger.debug('[ContinuationStage] No skill inferred from continuation type', { type });
     return undefined;
   }
+
+  private buildDirectSkillParams(
+    skillKey: string,
+    cachedData: Record<string, unknown>,
+    input: PipelineInput
+  ): Record<string, unknown> {
+    const skill = skillsRegistry.getSkillBySlug(skillKey);
+    const requiresData = Boolean(skill?.paramSchema?.some(param => param.name === 'data' && param.isRequired));
+    const toolOnlyData = this.filterToolResultsForSkillInput(cachedData);
+
+    if (!requiresData) {
+      return {
+        ...toolOnlyData,
+        userQuery: input.text
+      };
+    }
+
+    return {
+      data: toolOnlyData,
+      userQuery: input.text,
+      language: input.attributes?.language || 'id'
+    };
+  }
+
+  private filterToolResultsForSkillInput(cachedData: Record<string, unknown>): Record<string, unknown> {
+    const entries = Object.entries(cachedData || {});
+    const filtered = entries.filter(([key]) => !skillsRegistry.hasSkill(key));
+
+    if (filtered.length === 0) {
+      return cachedData;
+    }
+
+    return Object.fromEntries(filtered);
+  }
+
   private isSkill(targetKey: string): boolean {
     return skillsRegistry.hasSkill(targetKey);
   }
