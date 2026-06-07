@@ -862,15 +862,15 @@ export class PipelineCore {
         naturalResponse: guardedNaturalResponse,
         metadata: {
           totalTime: Date.now() - startTotal,
-          executedTasks: executionResult.metrics.executedTasks,
-          totalTasks: executionResult.metrics.totalTasks,
-          executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
-          activePlan: safePlan,
-          resolvedParams: safeParams,
-          activeOffer: selectedOffer,
+          // executedTasks: executionResult.metrics.executedTasks,
+          // totalTasks: executionResult.metrics.totalTasks,
+          // executedTasksDetails: executionResult.metrics.executedTasksDetails || [],
+          // activePlan: safePlan,
+          // resolvedParams: safeParams,
+          // activeOffer: selectedOffer,
           // recovery: selfCorrectionResult?.recoveryContext,
           // recoveryTrace: selfCorrectionResult?.trace || [],
-          blockedUnsafeSuccessClaim
+          // blockedUnsafeSuccessClaim
         }
       };
 

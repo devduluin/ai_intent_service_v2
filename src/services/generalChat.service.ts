@@ -211,6 +211,23 @@ Hint: jika user salah menggunakan command berikut yang benar:
     return basePrompt;
   }
 
+  private isIdentityQuestion(text: string): boolean {
+    const n = text.toLowerCase().replace(/\s+/g, ' ').trim();
+    return (
+      /^(siapa|apa)\s+(anda|kamu|viper|ini)$/i.test(n) ||
+      /^(kamu|anda)\s+(itu|ini)?\s*(siapa|apa)$/i.test(n) ||
+      /^(who are you|what are you|who is this|what is this)$/i.test(n) ||
+      /^(apakah\s+)?(anda|kamu)\s+(manusia|robot|ai|bot|asli|program)$/i.test(n) ||
+      /^are you (human|real|a robot|ai|a bot)$/i.test(n) ||
+      /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(bekerja|kerja|didesain|dibangun|dibuat|berfungsi|arsitektur|berpikir|berfikir)$/i.test(n) ||
+      /^bagaimana\s+cara\s+(anda|kamu|viper)\s+(berpikir|berfikir|bekerja|think|work|reason)$/i.test(n) ||
+      /^how (do you work|are you designed|are you built)$/i.test(n) ||
+      /^(jelaskan|jelasin|ceritakan)\s+(dirimu|tentang kamu|tentang anda|tentang viper|arsitekturmu|arsitektur anda)$/i.test(n) ||
+      /^(explain|describe|tell me about)\s+(yourself|your architecture)$/i.test(n) ||
+      /^(kenalan dong|introduce yourself|perkenalkan dirimu|ceritakan tentang dirimu)$/i.test(n)
+    );
+  }
+
   private isOperationalDataQuestion(text: string, contextCache?: ContextCache): boolean {
     const normalized = text.toLowerCase()
 
@@ -230,6 +247,9 @@ Hint: jika user salah menggunakan command berikut yang benar:
     input: PipelineInput,
     contextCache?: ContextCache
   ): string | null {
+    // Skip guard for identity/self-awareness questions
+    if (this.isIdentityQuestion(input.text)) return null;
+
     if (!this.isOperationalDataQuestion(input.text, contextCache)) {
       return null
     }

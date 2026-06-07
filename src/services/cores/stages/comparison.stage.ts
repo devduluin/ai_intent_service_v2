@@ -158,34 +158,34 @@ export class ComparisonStage {
         naturalResponse,
         metadata: {
           totalTime: Date.now() - stageInput.startTotal,
-          executedTasks: 3,
-          totalTasks: 3,
-          executedTasksDetails: [
-            {
-              key: context.toolTask.key,
-              resource: 'tool',
-              toolSlug: context.toolTask.key
-            },
-            {
-              key: context.toolTask.key,
-              resource: 'tool',
-              toolSlug: context.toolTask.key
-            },
-            {
-              key: context.analyzerSkill,
-              resource: 'skill'
-            }
-          ],
-          comparison: {
-            mode: context.mode,
-            operator: context.operator,
-            tool: context.tool.slug,
-            baselineLabel: context.baseline.label,
-            targetLabel: context.target.label,
-            baselineParams: context.baseline.params,
-            targetParams: context.target.params
-          } as any,
-          resolvedParams: context.commonParams
+          // executedTasks: 3,
+          // totalTasks: 3,
+          // executedTasksDetails: [
+          //   {
+          //     key: context.toolTask.key,
+          //     resource: 'tool',
+          //     toolSlug: context.toolTask.key
+          //   },
+          //   {
+          //     key: context.toolTask.key,
+          //     resource: 'tool',
+          //     toolSlug: context.toolTask.key
+          //   },
+          //   {
+          //     key: context.analyzerSkill,
+          //     resource: 'skill'
+          //   }
+          // ],
+          // comparison: {
+          //   mode: context.mode,
+          //   operator: context.operator,
+          //   tool: context.tool.slug,
+          //   baselineLabel: context.baseline.label,
+          //   targetLabel: context.target.label,
+          //   baselineParams: context.baseline.params,
+          //   targetParams: context.target.params
+          // } as any,
+          // resolvedParams: context.commonParams
         }
       }
     };

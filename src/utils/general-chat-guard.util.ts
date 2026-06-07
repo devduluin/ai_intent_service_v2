@@ -152,7 +152,8 @@ function isIdentityQuestion(text: string): boolean {
     /^(who are you|what are you|who is this|what is this)$/i.test(n) ||
     /^(apakah\s+)?(anda|kamu)\s+(manusia|robot|ai|bot|asli|program)$/i.test(n) ||
     /^are you (human|real|a robot|ai|a bot)$/i.test(n) ||
-    /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(bekerja|kerja|didesain|dibangun|dibuat|berfungsi|arsitektur)$/i.test(n) ||
+    /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(bekerja|kerja|didesain|dibangun|dibuat|berfungsi|arsitektur|berpikir|berfikir)$/i.test(n) ||
+    /^bagaimana\s+cara\s+(anda|kamu|viper)\s+(berpikir|berfikir|bekerja|think|work|reason)$/i.test(n) ||
     /^how (do you work|are you designed|are you built)$/i.test(n) ||
     /^(jelaskan|jelasin|ceritakan)\s+(dirimu|tentang kamu|tentang anda|tentang viper|arsitekturmu|arsitektur anda)$/i.test(n) ||
     /^(explain|describe|tell me about)\s+(yourself|your architecture)$/i.test(n) ||

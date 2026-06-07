@@ -634,9 +634,9 @@ private safeParse(raw: string, input?: PlannerInput, options?: PlannerOptions): 
     if (!frame) return null;
     switch (frame.type) {
       case 'direct_task':
-        return 'USER INGIN MENJALANKAN TUGAS LANGSUNG. Prioritaskan TOOL yang relevan. JANGAN pilih memory_recall, automation_manager, atau greeting.';
+        return 'USER INGIN MENJALANKAN TUGAS LANGSUNG. Prioritaskan TOOL yang relevan (Jika ada). JANGAN pilih memory_recall, automation_manager';
       case 'comparison':
-        return 'USER INGIN MEMBANDINGKAN DATA. Pilih TOOL yang relevan dengan query untuk mengambil data (misal: tool kendaraan untuk "cek kendaraan"). JANGAN pilih skill analisis atau trend_analyzer — perbandingan akan ditangani otomatis oleh sistem setelah tool mengambil data.';
+        return 'USER INGIN MEMBANDINGKAN DATA. Pilih TOOL yang relevan dengan query untuk mengambil data. JANGAN pilih skill analisis atau trend_analyzer — perbandingan akan ditangani otomatis oleh sistem setelah tool mengambil data.';
       case 'memory_question':
         return 'USER INGIN MENGINGAT RIWAYAT. Pilih skill memory_recall. JANGAN pilih automation_manager.';
       case 'memory_task_replay':

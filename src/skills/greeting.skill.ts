@@ -20,10 +20,10 @@ import { join } from 'path';
 export const greetingSkill: InternalSkillMetadata = {
   name: 'Greeting',
   slug: 'greeting',
-  description: 'Sapaan, ucapan terimakasih, identitas diri, dan daftar kemampuan yang tersedia',
+  description: 'Sapaan, ucapan terimakasih, identitas viper (ai system), tentang VIPER (system) ,dan daftar kemampuan dimiliki',
   handlerKey: 'handleGreeting',
   version: '1.0.0',
-  tags: ['greeting', 'welcome', 'utilities', 'capability'],
+  tags: ['greeting', 'welcome', 'about', 'viper', 'capability'],
   category: 'utilities',
   isHidden: false,
   capabilities: {
@@ -44,6 +44,9 @@ export const greetingSkill: InternalSkillMetadata = {
       'bisa bantu apa',
       'fitur yang tersedia',
       'layanan yang tersedia',
+      'bagaimana viper bekerja',
+      'bagaimana cara viper berfikir',
+      'apa itu viper',
       'what can you do',
       'show capabilities'
     ],
@@ -526,7 +529,8 @@ function detectGreetingInput(query: string): GreetingInputType {
   }
 
   if (
-    /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(didesain|dibangun|dibuat|bekerja|kerja|berfungsi|arsitektur)$/i.test(normalized) ||
+    /^(bagaimana|gimana)\s+(anda|kamu|viper)\s+(didesain|dibangun|dibuat|bekerja|kerja|berfungsi|arsitektur|berpikir|berfikir)$/i.test(normalized) ||
+    /^bagaimana\s+cara\s+(anda|kamu|viper)\s+(berpikir|berfikir|bekerja|work|think|reason)$/i.test(normalized) ||
     /^how (do you work|are you designed|are you built)$/i.test(normalized)
   ) {
     return 'identity_request';
